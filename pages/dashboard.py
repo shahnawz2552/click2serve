@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from core.auth import change_password
-from core.db import revenue_by_service, today_kpis
+from core.db import pending_verification_count, revenue_by_service, today_kpis
 
 if not st.session_state.get("logged_in"):
     st.warning("Please sign in to access the owner dashboard.")
@@ -16,6 +16,15 @@ if not st.session_state.get("logged_in"):
 
 st.title(f"📊 Dashboard")
 st.caption(f"Welcome back, **{st.session_state.get('username', 'owner')}**.")
+
+# Surface pending UPI verifications immediately — this is the highest-priority
+# thing an owner needs to act on each day.
+pending_verif = pending_verification_count()
+if pending_verif:
+    st.warning(
+        f"🔔 **{pending_verif} online payment(s) awaiting your verification.** "
+        "Open Bookings to confirm them in your UPI app."
+    )
 
 kpis = today_kpis()
 
@@ -53,6 +62,8 @@ with col_b:
     st.page_link("pages/bookings.py", label="📂 Manage bookings",
                  use_container_width=True)
     st.page_link("pages/revenue.py", label="💰 Revenue report",
+                 use_container_width=True)
+    st.page_link("pages/settings.py", label="⚙️ Shop settings",
                  use_container_width=True)
     st.page_link("pages/home.py", label="🏠 Customer view",
                  use_container_width=True)

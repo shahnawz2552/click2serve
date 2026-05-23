@@ -8,7 +8,8 @@ import streamlit as st
 
 from core.db import (
     PAYMENT_METHODS, STATUSES, list_bookings, list_documents,
-    update_booking_payment, update_booking_status,
+    reject_payment, update_booking_payment, update_booking_status,
+    verify_payment,
 )
 
 if not st.session_state.get("logged_in"):
@@ -115,6 +116,37 @@ with st.container(border=True):
 
     st.markdown("---")
     st.markdown("**Mark payment**")
+
+    # If the customer submitted a UTR online, surface it for one-click verify
+    if booking["payment_status"] == "submitted":
+        st.warning(
+            "🔔 **Online payment awaiting verification**  \n"
+            f"Customer paid via UPI · UTR  `{booking['payment_ref']}` · "
+            f"Amount  ₹{booking['amount_paid']}"
+        )
+        st.caption(
+            "Open your UPI app and look for an incoming credit matching this UTR / amount. "
+            "If it's there, click **Verify**. Otherwise click **Reject** and the customer "
+            "will be prompted to retry."
+        )
+        v1, v2 = st.columns(2)
+        if v1.button("✅ Verify payment", key="verify_btn",
+                     use_container_width=True, type="primary"):
+            verify_payment(booking["id"])
+            st.success("Payment verified. Customer will see the confirmation.")
+            st.rerun()
+        if v2.button("❌ Reject payment proof", key="reject_btn",
+                     use_container_width=True):
+            reject_payment(booking["id"])
+            st.warning("Payment proof rejected. Customer can retry.")
+            st.rerun()
+        st.markdown("---")
+        st.caption("Or override manually below if you collected cash / card directly.")
+    elif booking["payment_status"] == "verified":
+        st.success(f"✅ Payment verified · ₹{booking['amount_paid']} via "
+                   f"{booking['payment_method']}"
+                   + (f" · UTR `{booking['payment_ref']}`" if booking['payment_ref'] else ""))
+
     p1, p2, p3 = st.columns([1.2, 1.2, 1])
     new_method = p1.selectbox("Method", PAYMENT_METHODS,
                               index=PAYMENT_METHODS.index(booking["payment_method"])

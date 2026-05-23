@@ -16,14 +16,18 @@ deployable Streamlit app.
 - Browse 12 pre-loaded services across 4 categories
 - Filter by category, search by keyword
 - Book a service, attach supporting documents, get an instant token number
+- **Pay online via UPI** — scan a QR or tap to open PhonePe / GPay / Paytm
 - Track any booking by token number + mobile (lightweight privacy guard)
 
 ### For the shop owner
-- Password-protected dashboard with today's KPIs
+- Password-protected dashboard with today's KPIs and a **pending-verifications alert**
 - Live bookings queue with one-click status updates
   (Pending → In Progress → Ready → Delivered → Cancelled)
-- Mark payments as Cash / UPI / Card with the amount collected
+- **One-click verify or reject** for online (UPI) payments — UTR is shown
+  alongside the booking so you cross-check it in your own UPI app
+- Mark walk-in payments as Cash / UPI / Card with the amount collected
 - Revenue report: KPIs + daily bar charts + per-service breakdown + CSV export
+- Shop settings: configure shop info, opening hours, and your UPI VPA
 - Change owner password from the dashboard
 
 ### Pre-loaded services
@@ -42,6 +46,8 @@ Add or edit anything via the SQLite DB or extend with a UI module.
 | UI          | Streamlit (multi-page nav)   |
 | Database    | SQLite (file-based, zero ops)|
 | Auth        | Salted SHA-256 password hash |
+| Payments    | UPI deep link + QR (NPCI spec) — owner verifies UTR |
+| QR codes    | `segno` (pure Python)        |
 | File storage| Local `./uploads/` directory |
 | Language    | Python 3.10+                 |
 
@@ -140,11 +146,45 @@ thousands of rows.
 
 ---
 
+## Online payments (UPI flow)
+
+```
+Customer (phone)                           Owner (counter)
+─────────────────                          ─────────────────
+1. Books a service                         (sees the booking
+   → gets token C2S-XXXX                    appear in queue)
+2. Opens "Pay Online" page
+3. Scans QR / taps UPI button
+4. Pays in PhonePe / GPay / Paytm
+5. Pastes the 12-digit UTR              → sees UTR + amount
+   and submits                              with VERIFY / REJECT
+                                          6. Opens UPI app to confirm
+                                             the credit really hit
+                                          7. Clicks ✅ Verify
+                              ←   Customer sees "Payment verified"
+```
+
+**Setup (one-time, < 30 seconds):**
+
+1. Sign in as owner.
+2. Go to **Settings → Online payments**.
+3. Paste your UPI VPA (e.g. `yourname@okaxis`, `9876543210@ybl`,
+   `shop@upi`). The pay page goes live immediately.
+
+**Why owner-verified UTR instead of full auto-reconciliation?**
+A small shop already opens their UPI app dozens of times a day; pairing
+that habit with a one-click Verify button avoids the cost and KYC of a
+payment-gateway merchant account. When the shop scales, drop in
+Razorpay Payment Links — see the roadmap.
+
+---
+
 ## Roadmap (good first contributions)
 
+- [x] **UPI QR payments with owner-side UTR verification**
+- [ ] Razorpay Payment Links integration for full auto-reconciliation
 - [ ] Service CRUD UI (currently DB-edit only)
 - [ ] WhatsApp / SMS notification on status change
-- [ ] Online payment via Razorpay / UPI deep links
 - [ ] Multi-staff accounts with role-based permissions
 - [ ] Receipt PDF auto-generated on payment
 - [ ] Multi-language UI (Hindi + regional)

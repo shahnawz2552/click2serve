@@ -59,6 +59,26 @@ if submitted:
         pay_cols[0].metric("Payment method", booking["payment_method"])
         pay_cols[1].metric("Amount paid", f"₹{booking['amount_paid']}")
 
+        # Surface the payment-verification status with a useful next action
+        pstatus = booking["payment_status"] or "unpaid"
+        if pstatus == "submitted":
+            st.warning(
+                "⏳ Your payment is awaiting verification by the shop owner. "
+                f"UTR on file: **{booking['payment_ref']}**."
+            )
+        elif pstatus == "verified":
+            st.success("✅ Payment verified.")
+        elif pstatus == "rejected":
+            st.error("Your last payment proof was rejected. Please retry the payment.")
+
+        # Show the Pay-now CTA when there's still money owed
+        if booking["amount_paid"] < total or pstatus in ("rejected", "unpaid"):
+            st.session_state["pay_token"] = booking["token"]
+            st.session_state["pay_phone"] = booking["customer_phone"]
+            st.page_link("pages/pay.py",
+                         label="💳  Pay online now",
+                         use_container_width=True)
+
         # Documents (file names only — no public download for privacy)
         docs = list_documents(booking["id"])
         if docs:

@@ -48,6 +48,7 @@ def build_nav() -> dict[str, list[st.Page]]:
     customer_pages = [
         st.Page("pages/home.py", title="Home", icon="🏠", default=True),
         st.Page("pages/book.py", title="Book a Service", icon="📝"),
+        st.Page("pages/pay.py", title="Pay Online", icon="💳"),
         st.Page("pages/track.py", title="Track Booking", icon="🔍"),
     ]
 
@@ -56,6 +57,7 @@ def build_nav() -> dict[str, list[st.Page]]:
             st.Page("pages/dashboard.py", title="Dashboard", icon="📊"),
             st.Page("pages/bookings.py", title="Bookings", icon="📂"),
             st.Page("pages/revenue.py", title="Revenue", icon="💰"),
+            st.Page("pages/settings.py", title="Settings", icon="⚙️"),
             st.Page("pages/logout.py", title="Sign out", icon="🚪"),
         ]
     else:

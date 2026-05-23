@@ -27,6 +27,14 @@ def _ensure_dirs() -> None:
     UPLOAD_DIR.mkdir(exist_ok=True)
 
 
+def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
+    """Idempotent ALTER TABLE used for schema migrations on existing DBs."""
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    existing = {r["name"] for r in rows}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 @contextmanager
 def get_conn():
     """Yield a SQLite connection with FK enforcement and row-as-dict access."""
@@ -72,11 +80,12 @@ def init_db() -> None:
                 notes TEXT,
                 status TEXT NOT NULL DEFAULT 'Pending',
                 payment_method TEXT NOT NULL DEFAULT 'Unpaid',
+                payment_status TEXT NOT NULL DEFAULT 'unpaid',
+                payment_ref TEXT,
                 amount_paid INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
-
             CREATE INDEX IF NOT EXISTS ix_bookings_token ON bookings(token);
             CREATE INDEX IF NOT EXISTS ix_bookings_phone ON bookings(customer_phone);
             CREATE INDEX IF NOT EXISTS ix_bookings_status ON bookings(status);
@@ -99,7 +108,31 @@ def init_db() -> None:
                 role TEXT NOT NULL DEFAULT 'owner',
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS shop_config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                shop_name TEXT NOT NULL DEFAULT 'Click2Serve',
+                owner_name TEXT NOT NULL DEFAULT '',
+                owner_phone TEXT NOT NULL DEFAULT '',
+                address TEXT NOT NULL DEFAULT '',
+                upi_vpa TEXT NOT NULL DEFAULT '',
+                upi_payee_name TEXT NOT NULL DEFAULT '',
+                opening_hours TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
             """
+        )
+
+        # Idempotent migrations — keep already-deployed databases compatible.
+        _add_column_if_missing(conn, "bookings", "payment_status",
+                               "TEXT NOT NULL DEFAULT 'unpaid'")
+        _add_column_if_missing(conn, "bookings", "payment_ref", "TEXT")
+
+        # Ensure the singleton shop_config row exists.
+        from datetime import datetime as _dt
+        conn.execute(
+            "INSERT OR IGNORE INTO shop_config (id, updated_at) VALUES (1, ?)",
+            (_dt.utcnow().isoformat(timespec="seconds"),),
         )
 
     # First-run seed data (services + default admin)
@@ -255,12 +288,21 @@ def update_booking_payment(
 ) -> None:
     if method not in PAYMENT_METHODS:
         raise ValueError(f"Invalid payment method: {method}")
+    # Owner-marked payments (Cash/Card/UPI) are inherently verified;
+    # the only "submitted" path is when a customer pastes a UTR online.
+    payment_status = "unpaid" if method == "Unpaid" else "verified"
     now = datetime.utcnow().isoformat(timespec="seconds")
     with get_conn() as conn:
         conn.execute(
-            "UPDATE bookings SET payment_method = ?, amount_paid = ?, updated_at = ? "
-            "WHERE id = ?",
-            (method, int(amount), now, booking_id),
+            """
+            UPDATE bookings
+               SET payment_method = ?,
+                   amount_paid = ?,
+                   payment_status = ?,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (method, int(amount), payment_status, now, booking_id),
         )
 
 
@@ -385,3 +427,108 @@ def today_kpis() -> dict[str, Any]:
             (today,),
         ).fetchone()
     return {k: row[k] or 0 for k in row.keys()}
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Shop config (singleton row)
+# ──────────────────────────────────────────────────────────────────────────────
+def get_shop_config() -> sqlite3.Row:
+    """Return the singleton shop_config row, creating defaults if missing."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM shop_config WHERE id = 1").fetchone()
+        if row is None:
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            conn.execute(
+                "INSERT INTO shop_config (id, updated_at) VALUES (1, ?)",
+                (now,),
+            )
+            row = conn.execute("SELECT * FROM shop_config WHERE id = 1").fetchone()
+        return row
+
+
+def update_shop_config(**fields: Any) -> None:
+    """Update any subset of shop_config columns. Unknown keys are ignored."""
+    allowed = {
+        "shop_name", "owner_name", "owner_phone", "address",
+        "upi_vpa", "upi_payee_name", "opening_hours",
+    }
+    clean = {k: (v.strip() if isinstance(v, str) else v)
+             for k, v in fields.items() if k in allowed}
+    if not clean:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in clean)
+    params = list(clean.values())
+    params.append(datetime.utcnow().isoformat(timespec="seconds"))
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE shop_config SET {set_clause}, updated_at = ? WHERE id = 1",
+            params,
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Online-payment lifecycle (UPI flow)
+#
+#   payment_status transitions:
+#     unpaid → submitted          (customer pasted UTR)
+#     submitted → verified        (owner saw the credit in their UPI app)
+#     submitted → rejected        (UTR doesn't match → reverts to unpaid)
+# ──────────────────────────────────────────────────────────────────────────────
+def submit_payment_proof(
+    booking_id: int, *, ref: str, amount: int, method: str = "UPI"
+) -> None:
+    """Customer submits a UTR / transaction reference for verification."""
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE bookings
+               SET payment_method = ?,
+                   payment_status = 'submitted',
+                   payment_ref = ?,
+                   amount_paid = ?,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (method, ref.strip(), int(amount), now, booking_id),
+        )
+
+
+def verify_payment(booking_id: int) -> None:
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE bookings SET payment_status = 'verified', updated_at = ? "
+            "WHERE id = ?",
+            (now, booking_id),
+        )
+
+
+def reject_payment(booking_id: int) -> None:
+    """Reset the booking to unpaid so the customer can retry."""
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE bookings
+               SET payment_status = 'rejected',
+                   payment_ref = NULL,
+                   payment_method = 'Unpaid',
+                   amount_paid = 0,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (now, booking_id),
+        )
+
+
+
+def pending_verification_count() -> int:
+    """Number of bookings where the customer submitted a UTR but the owner
+    hasn't verified or rejected it yet. Used as a dashboard badge."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM bookings WHERE payment_status = 'submitted'"
+        ).fetchone()
+    return row["c"] or 0

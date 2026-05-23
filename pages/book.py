@@ -133,10 +133,18 @@ if submitted:
             st.markdown(f"📎 Uploaded **{len(saved_docs)}** file(s): "
                         + ", ".join(saved_docs))
         st.info(
-            "Visit the shop to make payment and pick up your work, or wait for "
-            "an SMS/WhatsApp update from the shop owner."
+            "💳 You can pay online now via UPI, or pay in cash at the shop "
+            "when you pick up your work."
         )
 
-    st.page_link("pages/track.py",
-                 label="🔍  Track this booking",
-                 use_container_width=True)
+    # Pre-fill the pay page so the customer doesn't have to retype their token
+    st.session_state["pay_token"] = token
+    st.session_state["pay_phone"] = phone
+
+    cta_a, cta_b = st.columns(2)
+    cta_a.page_link("pages/pay.py",
+                    label="💳  Pay online now",
+                    use_container_width=True)
+    cta_b.page_link("pages/track.py",
+                    label="🔍  Track this booking",
+                    use_container_width=True)
