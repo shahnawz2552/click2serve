@@ -1,407 +1,468 @@
-"""Global CSS + reusable HTML helpers for the Click2Serve UI.
+"""Editorial brand stylesheet for Click2Serve.
 
-The look-and-feel is inspired by clickup.com:
-  - Inter font, large bold display sizes
-  - Vibrant purple → pink gradients on the hero and primary CTAs
-  - Soft glassy cards with 18px radius and subtle shadows
-  - Pill badges, gradient text accents, hover lift on buttons
+Inspired by ventriloc.ca and similar premium Quebec data-agency landing
+pages: cream paper background, near-black ink, a single bright lime
+accent, and confident editorial typography on an asymmetric grid.
 
-Everything is injected once per page via `inject_global_css()`. Page-level
-helpers like `hero()` and `stat_strip()` then write semantic HTML that
-picks up these styles.
+Public surface:
+    inject_global_css() — drop the stylesheet into the current page once
+    hero(...)            — editorial hero with optional lime-highlight word
+    stat_strip(...)      — big-number stats row with horizontal rules
+    section_header(...)  — eyebrow + title + subtitle pattern
+    feature_card(...)    — clean numbered card
+    how_step(...)        — editorial step block with big numeral
+    cta_banner(...)      — black banner footer with lime headline
 """
 from __future__ import annotations
 
 import streamlit as st
 
-# ── Brand palette (ClickUp-inspired) ────────────────────────────────────────
-PRIMARY = "#7B68EE"      # purple
-PRIMARY_DARK = "#5B49C9"
-PINK = "#FB3F8C"
-SKY = "#06A0F0"
-INK = "#0A0E27"
-MUTED = "#5C5F7C"
-BORDER = "#E7E9F4"
+# ── Brand palette ───────────────────────────────────────────────────────────
+INK = "#0E120F"          # near-black with a green undertone
+INK_SOFT = "#1F2620"
+PAPER = "#F1ECE0"        # warm cream
+PAPER_SOFT = "#F8F4EA"
 SURFACE = "#FFFFFF"
-SURFACE_ALT = "#F7F8FB"
-
-GRADIENT = f"linear-gradient(135deg, {PRIMARY} 0%, {PINK} 100%)"
-GRADIENT_SOFT = f"linear-gradient(135deg, #F0EDFF 0%, #FFE9F4 100%)"
+LIME = "#C7F284"         # the signature accent
+LIME_DEEP = "#9FC95D"
+MUTED = "#5A6157"
+RULE = "#1F2620"
 
 
 _CSS = f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Instrument+Serif:ital@0;1&display=swap');
 
-/* ── Base typography ──────────────────────────────────────────────── */
+/* ── Global background + base type ─────────────────────────────────── */
+html, body, [data-testid="stAppViewContainer"], .stApp {{
+    background: {PAPER} !important;
+    color: {INK} !important;
+}}
 html, body, [class*="css"], [class*="st-"] {{
     font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
     color: {INK};
+    -webkit-font-smoothing: antialiased;
 }}
 
 h1, h2, h3, h4, h5, h6 {{
     font-family: 'Inter', system-ui, sans-serif !important;
-    letter-spacing: -0.02em;
     font-weight: 800 !important;
+    letter-spacing: -0.035em;
     color: {INK} !important;
+    line-height: 1.05 !important;
 }}
-
-h1 {{ font-size: 2.6rem !important; line-height: 1.1 !important; }}
-h2 {{ font-size: 2rem   !important; line-height: 1.2 !important; }}
-h3 {{ font-size: 1.4rem !important; line-height: 1.3 !important; }}
+h1 {{ font-size: 3rem !important; }}
+h2 {{ font-size: 2.2rem !important; }}
+h3 {{ font-size: 1.4rem !important; letter-spacing: -0.02em; }}
 
 p, span, label, div {{ color: {INK}; }}
 
-/* ── Tighten Streamlit's default container padding on the main page ─ */
+/* Tighten Streamlit's default page padding */
 section.main > div.block-container {{
-    padding-top: 1.5rem;
+    padding-top: 1.4rem;
     padding-bottom: 4rem;
     max-width: 1180px;
 }}
 
-/* ── Hero ──────────────────────────────────────────────────────────── */
+/* ── Editorial HERO ────────────────────────────────────────────────── */
 .c2s-hero {{
-    position: relative;
-    background: {GRADIENT_SOFT};
-    border: 1px solid {BORDER};
-    border-radius: 28px;
-    padding: 3.2rem 2.4rem 3rem;
-    margin-bottom: 2rem;
-    overflow: hidden;
-    text-align: center;
+    background: {PAPER};
+    border-top: 1px solid {RULE};
+    border-bottom: 1px solid {RULE};
+    padding: 3.6rem 0 3rem;
+    margin-bottom: 2.4rem;
 }}
-.c2s-hero::before {{
-    content: '';
-    position: absolute;
-    top: -120px; right: -120px;
-    width: 320px; height: 320px;
-    background: radial-gradient(closest-side, rgba(123,104,238,0.35), transparent 70%);
-    z-index: 0;
-}}
-.c2s-hero::after {{
-    content: '';
-    position: absolute;
-    bottom: -160px; left: -120px;
-    width: 360px; height: 360px;
-    background: radial-gradient(closest-side, rgba(251,63,140,0.28), transparent 70%);
-    z-index: 0;
-}}
-.c2s-hero > * {{ position: relative; z-index: 1; }}
-
-.c2s-hero-badge {{
-    display: inline-block;
-    padding: 0.35rem 0.9rem;
-    background: white;
-    border: 1px solid {BORDER};
-    border-radius: 999px;
+.c2s-hero-eyebrow {{
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
     font-size: 0.78rem;
     font-weight: 600;
-    color: {PRIMARY};
-    margin-bottom: 1rem;
-    box-shadow: 0 2px 6px rgba(10, 14, 39, 0.04);
+    color: {INK};
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    margin-bottom: 1.6rem;
 }}
-
+.c2s-hero-eyebrow::before {{
+    content: '';
+    width: 10px; height: 10px;
+    background: {LIME};
+    border-radius: 50%;
+}}
 .c2s-hero-title {{
-    font-size: clamp(2.2rem, 4.6vw, 3.6rem) !important;
+    font-size: clamp(2.4rem, 6vw, 4.6rem) !important;
     font-weight: 900 !important;
-    line-height: 1.05 !important;
-    letter-spacing: -0.03em;
-    margin: 0 auto 1rem !important;
-    max-width: 780px;
+    line-height: 0.98 !important;
+    letter-spacing: -0.04em;
+    margin: 0 0 1.4rem !important;
+    max-width: 920px;
+    color: {INK} !important;
 }}
-
-.c2s-gradient-text {{
-    background: {GRADIENT};
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+.c2s-accent {{
+    display: inline-block;
+    background: linear-gradient(180deg, transparent 60%, {LIME} 60%, {LIME} 96%, transparent 96%);
+    padding: 0 0.15em;
 }}
-
+.c2s-italic {{
+    font-family: 'Instrument Serif', Georgia, serif !important;
+    font-style: italic;
+    font-weight: 400 !important;
+    letter-spacing: -0.01em;
+}}
 .c2s-hero-sub {{
-    font-size: 1.1rem;
+    font-size: 1.15rem;
     color: {MUTED};
-    max-width: 600px;
-    margin: 0 auto 1.6rem;
+    max-width: 640px;
+    margin: 0 0 1.6rem;
     line-height: 1.55;
 }}
 
-/* ── Stat strip (under hero) ──────────────────────────────────────── */
+/* ── BIG-NUMBER stat strip ─────────────────────────────────────────── */
 .c2s-stats {{
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 1rem;
-    background: white;
-    border: 1px solid {BORDER};
-    border-radius: 18px;
-    padding: 1.2rem 1.4rem;
-    margin: -2.4rem auto 2rem;
-    max-width: 760px;
-    position: relative;
-    z-index: 2;
-    box-shadow: 0 14px 40px rgba(10, 14, 39, 0.06);
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    margin: 0 0 2.4rem;
+    border-top: 1px solid {RULE};
+    border-bottom: 1px solid {RULE};
 }}
-.c2s-stat {{ text-align: center; }}
+.c2s-stat {{
+    padding: 1.4rem 1.2rem;
+    border-right: 1px solid {RULE};
+}}
+.c2s-stat:last-child {{ border-right: none; }}
 .c2s-stat-value {{
-    font-size: 1.7rem;
-    font-weight: 800;
-    background: {GRADIENT};
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    line-height: 1.1;
+    font-size: 2.6rem;
+    font-weight: 900;
+    color: {INK};
+    line-height: 1;
+    letter-spacing: -0.04em;
+    margin-bottom: 0.3rem;
 }}
 .c2s-stat-label {{
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     color: {MUTED};
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    margin-top: 0.2rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}}
+.c2s-stat-value sup {{
+    font-size: 1rem;
+    color: {LIME_DEEP};
+    margin-left: 0.15em;
+    vertical-align: top;
 }}
 
-/* ── Section headers ──────────────────────────────────────────────── */
+/* ── Editorial section header ──────────────────────────────────────── */
 .c2s-eyebrow {{
-    display: inline-block;
-    padding: 0.3rem 0.85rem;
-    background: white;
-    border: 1px solid {BORDER};
-    border-radius: 999px;
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: {PRIMARY};
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: {INK};
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.16em;
     margin-bottom: 0.9rem;
 }}
+.c2s-eyebrow::before {{
+    content: '';
+    width: 28px; height: 1px;
+    background: {INK};
+}}
 .c2s-section-title {{
-    font-size: 2rem !important;
-    font-weight: 800 !important;
-    letter-spacing: -0.02em;
-    margin-bottom: 0.4rem;
+    font-size: clamp(1.8rem, 3.5vw, 2.6rem) !important;
+    font-weight: 900 !important;
+    letter-spacing: -0.035em;
+    line-height: 1.05 !important;
+    margin-bottom: 0.6rem;
+    max-width: 880px;
 }}
 .c2s-section-sub {{
     color: {MUTED};
-    font-size: 1.02rem;
-    max-width: 640px;
-    margin-bottom: 1.4rem;
+    font-size: 1.05rem;
+    max-width: 660px;
+    margin-bottom: 1.6rem;
+    line-height: 1.55;
 }}
 
-/* ── Service cards (grid) ─────────────────────────────────────────── */
+/* ── Cards (st.container border + custom HTML) ─────────────────────── */
 div[data-testid="stVerticalBlockBorderWrapper"] {{
-    border-radius: 18px !important;
-    border-color: {BORDER} !important;
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
-    background: white;
+    border-radius: 0 !important;
+    border: 1px solid {RULE} !important;
+    background: {SURFACE};
+    transition: background 0.18s ease, transform 0.18s ease;
 }}
 div[data-testid="stVerticalBlockBorderWrapper"]:hover {{
-    transform: translateY(-2px);
-    box-shadow: 0 18px 40px rgba(10, 14, 39, 0.07);
-    border-color: rgba(123, 104, 238, 0.35) !important;
+    background: {PAPER_SOFT};
 }}
 
-/* ── Buttons ──────────────────────────────────────────────────────── */
+/* ── Buttons (editorial: square corners, sharp hover) ──────────────── */
 .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {{
-    border-radius: 12px !important;
+    border-radius: 0 !important;
     font-weight: 600 !important;
-    padding: 0.6rem 1.2rem !important;
-    border: 1px solid {BORDER} !important;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    padding: 0.7rem 1.3rem !important;
+    border: 1px solid {INK} !important;
+    background: {SURFACE} !important;
     color: {INK} !important;
-    background: white !important;
+    transition: background 0.15s ease, color 0.15s ease;
+    font-size: 0.94rem !important;
+    letter-spacing: -0.005em;
 }}
 .stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover {{
-    transform: translateY(-1px);
-    box-shadow: 0 8px 20px rgba(10, 14, 39, 0.08);
-    border-color: {PRIMARY} !important;
+    background: {INK} !important;
+    color: {PAPER} !important;
+    border-color: {INK} !important;
 }}
 
-/* Primary buttons get the brand gradient */
+/* Primary buttons get the lime accent on hover */
 .stButton > button[kind="primary"],
 .stFormSubmitButton > button[kind="primary"],
 .stDownloadButton > button[kind="primary"] {{
-    background: {GRADIENT} !important;
-    color: white !important;
-    border: none !important;
-    box-shadow: 0 6px 18px rgba(123, 104, 238, 0.32);
+    background: {INK} !important;
+    color: {PAPER} !important;
+    border: 1px solid {INK} !important;
 }}
 .stButton > button[kind="primary"]:hover,
 .stFormSubmitButton > button[kind="primary"]:hover,
 .stDownloadButton > button[kind="primary"]:hover {{
-    transform: translateY(-2px);
-    box-shadow: 0 12px 28px rgba(123, 104, 238, 0.42);
-    filter: brightness(1.05);
+    background: {LIME} !important;
+    color: {INK} !important;
+    border-color: {LIME} !important;
 }}
 .stButton > button[kind="primary"]:disabled {{
-    opacity: 0.55;
-    transform: none;
-    box-shadow: none;
+    opacity: 0.45;
 }}
 
-/* ── Page links (the sidebar nav and inline ones) ─────────────────── */
+/* Page links (sidebar nav and inline) — minimal underline-on-hover */
+a[data-testid="stPageLink-NavLink"] {{
+    border-radius: 0 !important;
+    font-weight: 500;
+}}
 a[data-testid="stPageLink-NavLink"]:hover {{
-    background: rgba(123, 104, 238, 0.08) !important;
-    border-radius: 10px;
+    background: {LIME} !important;
+    color: {INK} !important;
 }}
 
-/* ── Metrics ──────────────────────────────────────────────────────── */
+/* ── Metrics — big editorial numbers ───────────────────────────────── */
 [data-testid="stMetric"] {{
-    background: white;
-    border: 1px solid {BORDER};
-    border-radius: 16px;
-    padding: 1rem 1.1rem;
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
-}}
-[data-testid="stMetric"]:hover {{
-    transform: translateY(-2px);
-    box-shadow: 0 10px 24px rgba(10, 14, 39, 0.06);
+    background: {SURFACE};
+    border: 1px solid {RULE};
+    border-radius: 0;
+    padding: 1.2rem 1.2rem;
 }}
 [data-testid="stMetricValue"] {{
-    font-size: 1.7rem !important;
-    font-weight: 800 !important;
+    font-size: 2rem !important;
+    font-weight: 900 !important;
     color: {INK} !important;
+    letter-spacing: -0.03em;
 }}
 [data-testid="stMetricLabel"] {{
     color: {MUTED} !important;
-    font-weight: 500 !important;
+    font-weight: 600 !important;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.10em;
     font-size: 0.72rem !important;
 }}
 
-/* ── Inputs ───────────────────────────────────────────────────────── */
+/* ── Inputs — squared, editorial ───────────────────────────────────── */
 input, textarea, .stTextInput > div > div > input, .stNumberInput input {{
-    border-radius: 10px !important;
+    border-radius: 4px !important;
 }}
 .stTextInput > div > div, .stNumberInput > div, .stSelectbox > div > div,
 .stDateInput > div > div, .stTextArea > div > div {{
-    border-radius: 10px !important;
+    border-radius: 4px !important;
+    border-color: {RULE} !important;
 }}
 
-/* ── Sidebar polish ───────────────────────────────────────────────── */
+/* ── Sidebar — paper background, sharp rule on the right ───────────── */
 section[data-testid="stSidebar"] {{
-    background: linear-gradient(180deg, #FFFFFF 0%, #FAF9FF 100%);
-    border-right: 1px solid {BORDER};
+    background: {PAPER} !important;
+    border-right: 1px solid {RULE};
 }}
 
-/* ── Alerts / info / success / warning ────────────────────────────── */
+/* ── Alerts — flat, editorial ──────────────────────────────────────── */
 [data-testid="stAlert"] {{
-    border-radius: 14px !important;
-    border-left-width: 4px !important;
+    border-radius: 0 !important;
+    border-left: 4px solid {INK} !important;
+    background: {SURFACE} !important;
 }}
 
-/* ── Feature card (custom HTML) ───────────────────────────────────── */
+/* ── Feature card (HTML helper) ────────────────────────────────────── */
 .c2s-feature {{
-    background: white;
-    border: 1px solid {BORDER};
-    border-radius: 18px;
-    padding: 1.6rem 1.4rem;
+    background: {SURFACE};
+    border: 1px solid {RULE};
+    padding: 1.8rem 1.5rem 1.6rem;
     height: 100%;
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
+    transition: transform 0.18s ease;
 }}
-.c2s-feature:hover {{
-    transform: translateY(-3px);
-    box-shadow: 0 14px 34px rgba(10, 14, 39, 0.07);
+.c2s-feature:hover {{ transform: translateY(-3px); }}
+.c2s-feature-marker {{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.2rem;
+}}
+.c2s-feature-num {{
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.4rem;
+    color: {MUTED};
+    font-weight: 400;
+    font-style: italic;
 }}
 .c2s-feature-icon {{
-    width: 44px; height: 44px;
-    border-radius: 12px;
-    background: {GRADIENT_SOFT};
+    width: 38px; height: 38px;
+    border-radius: 999px;
+    background: {LIME};
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 1.4rem;
-    margin-bottom: 0.9rem;
+    font-size: 1.1rem;
 }}
 .c2s-feature-title {{
-    font-size: 1.1rem;
-    font-weight: 700;
-    margin-bottom: 0.3rem;
+    font-size: 1.25rem;
+    font-weight: 800;
+    margin-bottom: 0.45rem;
     color: {INK};
+    letter-spacing: -0.02em;
+    line-height: 1.2;
 }}
 .c2s-feature-text {{
     color: {MUTED};
-    font-size: 0.92rem;
+    font-size: 0.95rem;
     line-height: 1.55;
 }}
 
-/* ── How-it-works step ────────────────────────────────────────────── */
+/* ── How-it-works step ─────────────────────────────────────────────── */
 .c2s-step {{
-    background: white;
-    border: 1px solid {BORDER};
-    border-radius: 18px;
-    padding: 1.6rem 1.4rem;
+    border-top: 1px solid {RULE};
+    padding: 1.8rem 0 1.5rem;
     height: 100%;
-    position: relative;
+    display: flex;
+    flex-direction: column;
 }}
 .c2s-step-num {{
-    position: absolute;
-    top: -18px; left: 1.4rem;
-    width: 38px; height: 38px;
-    border-radius: 12px;
-    background: {GRADIENT};
-    color: white;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 800;
-    font-size: 1.1rem;
-    box-shadow: 0 8px 18px rgba(123, 104, 238, 0.32);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: {INK};
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 1rem;
 }}
-.c2s-step h4 {{ margin-top: 1.1rem; font-size: 1.1rem !important; font-weight: 700 !important; }}
-.c2s-step p  {{ color: {MUTED}; font-size: 0.92rem; line-height: 1.55; margin-bottom: 0; }}
-
-/* ── CTA banner (footer of the home page) ─────────────────────────── */
-.c2s-cta-banner {{
-    background: {GRADIENT};
-    border-radius: 24px;
-    padding: 2.6rem 2rem;
-    text-align: center;
-    color: white;
-    margin-top: 2.5rem;
+.c2s-step-num-num {{
+    color: {LIME_DEEP};
+    margin-right: 0.4rem;
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.5rem;
+    font-style: italic;
+    font-weight: 400;
+    vertical-align: -2px;
 }}
-.c2s-cta-banner h2 {{
-    color: white !important;
-    font-size: 2rem !important;
-    margin-bottom: 0.6rem !important;
+.c2s-step h4 {{
+    font-size: 1.3rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.5rem !important;
 }}
-.c2s-cta-banner p {{
-    color: rgba(255,255,255,0.92);
-    font-size: 1.05rem;
+.c2s-step p {{
+    color: {MUTED};
+    font-size: 0.96rem;
+    line-height: 1.55;
     margin-bottom: 0;
 }}
 
-/* ── Service price + ETA mini badges ──────────────────────────────── */
-.c2s-meta-row {{
-    display: flex;
-    gap: 0.55rem;
-    margin: 0.55rem 0 0.4rem;
+/* ── CTA banner (closing footer) ───────────────────────────────────── */
+.c2s-cta-banner {{
+    background: {INK};
+    color: {PAPER};
+    padding: 3.5rem 2.4rem;
+    margin-top: 3rem;
+    margin-bottom: 1rem;
+    border: 1px solid {INK};
 }}
-.c2s-pill {{
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.22rem 0.6rem;
-    border-radius: 999px;
-    font-size: 0.78rem;
-    font-weight: 600;
-}}
-.c2s-pill-price {{
-    background: rgba(123,104,238,0.10);
-    color: {PRIMARY_DARK};
-}}
-.c2s-pill-eta {{
-    background: rgba(251,63,140,0.10);
-    color: {PINK};
-}}
-.c2s-cat {{
+.c2s-cta-banner-eyebrow {{
     font-size: 0.74rem;
+    font-weight: 600;
+    color: {LIME};
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    margin-bottom: 0.9rem;
+}}
+.c2s-cta-banner h2 {{
+    color: {PAPER} !important;
+    font-size: clamp(1.8rem, 4vw, 2.8rem) !important;
+    font-weight: 900 !important;
+    letter-spacing: -0.035em;
+    line-height: 1.05 !important;
+    margin: 0 0 0.8rem !important;
+    max-width: 760px;
+}}
+.c2s-cta-banner h2 .c2s-accent {{
+    background: linear-gradient(180deg, transparent 62%, {LIME} 62%, {LIME} 95%, transparent 95%);
+    color: {INK};
+    padding: 0 0.18em;
+}}
+.c2s-cta-banner p {{
+    color: rgba(241, 236, 224, 0.78);
+    font-size: 1.05rem;
+    margin: 0 0 1.4rem;
+    max-width: 580px;
+    line-height: 1.55;
+}}
+
+/* Service-card pieces */
+.c2s-cat {{
+    font-size: 0.7rem;
     font-weight: 600;
     color: {MUTED};
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 0.35rem;
+    letter-spacing: 0.14em;
+    margin-bottom: 0.6rem;
+}}
+.c2s-svc-name {{
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: {INK};
+    margin-bottom: 0.4rem;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+}}
+.c2s-svc-desc {{
+    color: {MUTED};
+    font-size: 0.92rem;
+    line-height: 1.5;
+    min-height: 60px;
+    margin-bottom: 0.8rem;
+}}
+.c2s-meta-row {{
+    display: flex;
+    gap: 1rem;
+    margin: 0.6rem 0 0.5rem;
+    padding-top: 0.7rem;
+    border-top: 1px dashed {RULE};
+}}
+.c2s-pill {{
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: {INK};
+}}
+.c2s-pill .c2s-pill-label {{
+    font-weight: 500;
+    color: {MUTED};
+    margin-right: 0.3rem;
 }}
 
-/* Keep things responsive on small screens */
+/* Editorial divider */
+.c2s-rule {{
+    border: 0;
+    border-top: 1px solid {RULE};
+    margin: 2.5rem 0;
+}}
+
+/* Mobile breakpoint */
 @media (max-width: 640px) {{
-    .c2s-hero {{ padding: 2.2rem 1.2rem; border-radius: 22px; }}
-    .c2s-hero-title {{ font-size: 2rem !important; }}
-    .c2s-stats {{ margin-top: -1.5rem; padding: 0.9rem 1rem; }}
+    .c2s-hero {{ padding: 2.6rem 0 2rem; }}
+    .c2s-hero-title {{ font-size: 2.2rem !important; }}
+    .c2s-stat-value {{ font-size: 2rem; }}
+    .c2s-stat {{ border-right: none; border-bottom: 1px solid {RULE}; }}
+    .c2s-stat:last-child {{ border-bottom: none; }}
 }}
 </style>
 """
@@ -414,15 +475,18 @@ def inject_global_css() -> None:
         st.session_state["_c2s_css_injected"] = True
 
 
-# ── Reusable HTML fragments ─────────────────────────────────────────────────
+# ── Reusable HTML helpers ────────────────────────────────────────────────────
 
 def hero(*, badge: str, title_html: str, subtitle: str) -> None:
-    """Render the gradient hero block. ``title_html`` may include a
-    ``<span class='c2s-gradient-text'>...</span>`` fragment for accent."""
+    """Editorial hero with eyebrow + giant title + subtitle.
+    ``title_html`` may include:
+        <span class='c2s-accent'>...</span>   for a lime-highlight word
+        <span class='c2s-italic'>...</span>   for an Instrument Serif italic word
+    """
     st.markdown(
         f"""
         <div class="c2s-hero">
-            <span class="c2s-hero-badge">{badge}</span>
+            <div class="c2s-hero-eyebrow">{badge}</div>
             <h1 class="c2s-hero-title">{title_html}</h1>
             <p class="c2s-hero-sub">{subtitle}</p>
         </div>
@@ -432,13 +496,12 @@ def hero(*, badge: str, title_html: str, subtitle: str) -> None:
 
 
 def stat_strip(stats: list[tuple[str, str]]) -> None:
-    """Render the floating stats strip used directly under the hero.
-
-    ``stats`` is a list of (value, label) tuples, e.g. ``[("12+", "Services")]``.
-    """
+    """Big-number editorial stat strip. ``stats`` is ``[(value, label), …]``."""
     inner = "".join(
-        f'<div class="c2s-stat"><div class="c2s-stat-value">{v}</div>'
-        f'<div class="c2s-stat-label">{l}</div></div>'
+        f'<div class="c2s-stat">'
+        f'<div class="c2s-stat-value">{v}</div>'
+        f'<div class="c2s-stat-label">{l}</div>'
+        f'</div>'
         for v, l in stats
     )
     st.markdown(f'<div class="c2s-stats">{inner}</div>', unsafe_allow_html=True)
@@ -458,11 +521,15 @@ def section_header(eyebrow: str, title: str, subtitle: str = "") -> None:
     )
 
 
-def feature_card(icon: str, title: str, text: str) -> None:
+def feature_card(num: str, icon: str, title: str, text: str) -> None:
+    """Numbered editorial feature card. ``num`` like '01', ``icon`` an emoji."""
     st.markdown(
         f"""
         <div class="c2s-feature">
-            <div class="c2s-feature-icon">{icon}</div>
+            <div class="c2s-feature-marker">
+                <span class="c2s-feature-num">{num}</span>
+                <span class="c2s-feature-icon">{icon}</span>
+            </div>
             <div class="c2s-feature-title">{title}</div>
             <div class="c2s-feature-text">{text}</div>
         </div>
@@ -475,7 +542,10 @@ def how_step(num: int, title: str, text: str) -> None:
     st.markdown(
         f"""
         <div class="c2s-step">
-            <div class="c2s-step-num">{num}</div>
+            <div class="c2s-step-num">
+                <span class="c2s-step-num-num">{num:02d}</span>
+                Step {num}
+            </div>
             <h4>{title}</h4>
             <p>{text}</p>
         </div>
@@ -484,11 +554,12 @@ def how_step(num: int, title: str, text: str) -> None:
     )
 
 
-def cta_banner(title: str, subtitle: str) -> None:
+def cta_banner(eyebrow: str, title_html: str, subtitle: str) -> None:
     st.markdown(
         f"""
         <div class="c2s-cta-banner">
-            <h2>{title}</h2>
+            <div class="c2s-cta-banner-eyebrow">{eyebrow}</div>
+            <h2>{title_html}</h2>
             <p>{subtitle}</p>
         </div>
         """,

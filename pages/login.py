@@ -14,18 +14,17 @@ left, mid, right = st.columns([1, 1.4, 1])
 with mid:
     st.markdown(
         """
-        <div style="text-align:center; margin-top:2rem; margin-bottom:1.2rem;">
+        <div style="text-align:center; margin-top:2rem; margin-bottom:1.4rem;">
             <div style="
-                width: 60px; height: 60px;
-                border-radius: 18px;
-                background: linear-gradient(135deg, #7B68EE 0%, #FB3F8C 100%);
-                display: inline-flex; align-items: center; justify-content: center;
-                font-size: 1.8rem;
-                box-shadow: 0 10px 26px rgba(123,104,238,0.32);
-                margin-bottom: 0.8rem;
-            ">🔐</div>
-            <h2 style="margin: 0 0 0.3rem 0;">Owner Sign In</h2>
-            <div style="color:#5C5F7C; font-size:0.95rem;">
+                font-size:0.74rem; font-weight:600;
+                color:#0E120F; text-transform:uppercase;
+                letter-spacing:0.16em; margin-bottom:0.8rem;
+                display: inline-flex; align-items: center; gap: 0.55rem;
+            "><span style="width:28px; height:1px; background:#0E120F;"></span>Owner access</div>
+            <h2 style="margin:0 0 0.4rem 0; font-size:2rem; font-weight:900; letter-spacing:-0.035em;">
+                Sign in to your dashboard.
+            </h2>
+            <div style="color:#5A6157; font-size:1rem;">
                 Shop staff &amp; owner access only.
             </div>
         </div>

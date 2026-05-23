@@ -34,22 +34,25 @@ inject_global_css()
 with st.sidebar:
     st.markdown(
         """
-        <div style="text-align: center; padding: 0.6rem 0 1.4rem 0;">
+        <div style="padding: 0.4rem 0 1.6rem 0; border-bottom: 1px solid #1F2620; margin-bottom: 1rem;">
             <div style="
-                width: 56px; height: 56px;
-                border-radius: 16px;
-                background: linear-gradient(135deg, #7B68EE 0%, #FB3F8C 100%);
-                display: inline-flex; align-items: center; justify-content: center;
-                font-size: 1.7rem;
-                margin-bottom: 0.6rem;
-                box-shadow: 0 8px 22px rgba(123,104,238,0.32);
-            ">🛎️</div>
-            <div style="font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; color: #0A0E27;">
-                Click2Serve
-            </div>
-            <div style="font-size: 0.78rem; color: #5C5F7C; font-weight: 500;">
-                Digital service hub
-            </div>
+                display: inline-block;
+                width: 8px; height: 8px;
+                background: #C7F284;
+                border-radius: 50%;
+                margin-right: 0.5rem;
+                vertical-align: middle;
+            "></div>
+            <span style="
+                font-size: 1.05rem; font-weight: 800;
+                letter-spacing: -0.02em; color: #0E120F;
+                vertical-align: middle;
+            ">click2serve</span>
+            <div style="
+                font-size: 0.7rem; color: #5A6157;
+                font-weight: 500; text-transform: uppercase;
+                letter-spacing: 0.14em; margin-top: 0.5rem;
+            ">Digital service hub</div>
         </div>
         """,
         unsafe_allow_html=True,

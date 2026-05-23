@@ -1,4 +1,4 @@
-"""Customer landing page — gradient hero, stats, services grid, CTA banner."""
+"""Customer landing page — editorial hero, stats, services grid, CTA."""
 from __future__ import annotations
 
 import streamlit as st
@@ -13,38 +13,45 @@ inject_global_css()
 
 # ── Hero ────────────────────────────────────────────────────────────────────
 hero(
-    badge="🚀  New · Pay online via UPI",
+    badge="Click2Serve · Digital service hub",
     title_html=(
         "One shop for every "
-        "<span class='c2s-gradient-text'>government &amp; utility</span> "
-        "service"
+        "<span class='c2s-accent'>government</span> "
+        "&amp; "
+        "<span class='c2s-italic'>utility</span> "
+        "service."
     ),
     subtitle=(
-        "Skip the queue. Book passport, driving licence, bills, challans, "
-        "photocopying and more — pay from your phone, pick up when ready."
+        "Skip the queue. Book passport, driving licence, bills, challans and "
+        "photocopying — pay from your phone, pick up when ready."
     ),
 )
 
-# Hero CTAs sit just below — using real Streamlit buttons so navigation works
-hcta1, hcta2, hcta3 = st.columns([1, 1, 1])
+# Hero CTAs sit right after the hero — real Streamlit buttons so navigation works
+hcta1, hcta2, hcta3, _ = st.columns([1, 1, 1, 2])
 with hcta1:
-    st.page_link("pages/book.py", label="📝  Book a service", use_container_width=True)
+    st.page_link("pages/book.py", label="Book a service →",
+                 use_container_width=True)
 with hcta2:
-    st.page_link("pages/track.py", label="🔍  Track booking", use_container_width=True)
+    st.page_link("pages/track.py", label="Track booking",
+                 use_container_width=True)
 with hcta3:
-    st.page_link("pages/pay.py", label="💳  Pay online", use_container_width=True)
+    st.page_link("pages/pay.py", label="Pay online",
+                 use_container_width=True)
 
-# Stat strip floats over the hero/cta boundary
+st.markdown("<div style='height:2rem;'></div>", unsafe_allow_html=True)
+
+# ── Big-number stats strip ──────────────────────────────────────────────────
 all_services = list_services(active_only=True)
 all_categories = list_categories()
 stat_strip([
-    (f"{len(all_services)}+", "Services"),
+    (f"{len(all_services)}<sup>+</sup>", "Services live"),
     (f"{len(all_categories)}", "Categories"),
-    ("100%", "UPI ready"),
-    ("~24h", "Typical ETA"),
+    ("100<sup>%</sup>", "UPI ready"),
+    ("~24<sup>h</sup>", "Typical ETA"),
 ])
 
-# ── Why customers love us (features) ────────────────────────────────────────
+# ── Why customers love us ───────────────────────────────────────────────────
 section_header(
     eyebrow="Why Click2Serve",
     title="Less waiting. More doing.",
@@ -54,6 +61,7 @@ section_header(
 f1, f2, f3 = st.columns(3, gap="medium")
 with f1:
     feature_card(
+        "01",
         "🚀",
         "Fast turnaround",
         "Most government and bill services completed in 24–48 hours, "
@@ -61,6 +69,7 @@ with f1:
     )
 with f2:
     feature_card(
+        "02",
         "💳",
         "Pay from your phone",
         "Scan a QR or tap to open PhonePe, GPay, Paytm or any UPI app. "
@@ -68,17 +77,18 @@ with f2:
     )
 with f3:
     feature_card(
+        "03",
         "🔒",
         "Private &amp; secure",
         "Your documents stay on the shop's local storage. Token + mobile "
-        "required to view a booking — no public links, no oversharing.",
+        "required to view a booking — no public links.",
     )
 
 # ── How it works ────────────────────────────────────────────────────────────
 section_header(
     eyebrow="How it works",
-    title="From booking to pickup in three steps",
-    subtitle="No queue at the counter. No paperwork printed and re-printed. Just three taps.",
+    title="From booking to pickup in three steps.",
+    subtitle="No queue. No paperwork printed and re-printed. Just three taps.",
 )
 
 s1, s2, s3 = st.columns(3, gap="medium")
@@ -107,7 +117,7 @@ with s3:
 # ── Services catalogue ──────────────────────────────────────────────────────
 section_header(
     eyebrow="What we do",
-    title="Browse our services",
+    title="Browse our services.",
     subtitle="Government IDs, vehicle services, bill payments, document services — all under one roof.",
 )
 
@@ -120,7 +130,7 @@ with fc1:
 with fc2:
     search = st.text_input(
         "Search",
-        placeholder="🔎  Search services — passport, electricity, driving licence...",
+        placeholder="Search services — passport, electricity, driving licence…",
         label_visibility="collapsed",
     )
 
@@ -138,8 +148,10 @@ if search:
     ]
 
 st.markdown(
-    f'<p style="color:#5C5F7C; margin: 0.4rem 0 1rem; font-weight:500;">'
-    f"Showing <b>{len(services)}</b> of {len(all_services)} services"
+    f'<p style="color:#5A6157; margin: 0.4rem 0 1rem; font-weight:500; '
+    f'font-size:0.92rem; letter-spacing:0.01em;">'
+    f"Showing <b style='color:#0E120F;'>{len(services)}</b> of "
+    f"{len(all_services)} services"
     f"</p>",
     unsafe_allow_html=True,
 )
@@ -155,27 +167,24 @@ else:
             with col:
                 with st.container(border=True):
                     st.markdown(
-                        f'<div class="c2s-cat">📂  {svc["category"]}</div>',
+                        f'<div class="c2s-cat">{svc["category"]}</div>',
                         unsafe_allow_html=True,
                     )
                     st.markdown(
-                        f"<div style='font-size:1.05rem; font-weight:700; "
-                        f"color:#0A0E27; margin-bottom:0.35rem; line-height:1.3;'>"
-                        f"{svc['name']}</div>",
+                        f'<div class="c2s-svc-name">{svc["name"]}</div>',
                         unsafe_allow_html=True,
                     )
                     desc = svc["description"]
                     short = desc[:108] + ("…" if len(desc) > 108 else "")
                     st.markdown(
-                        f"<div style='color:#5C5F7C; font-size:0.9rem; "
-                        f"line-height:1.5; min-height:54px;'>{short}</div>",
+                        f'<div class="c2s-svc-desc">{short}</div>',
                         unsafe_allow_html=True,
                     )
                     st.markdown(
                         f"""
                         <div class="c2s-meta-row">
-                            <span class="c2s-pill c2s-pill-price">💰  ₹{total}</span>
-                            <span class="c2s-pill c2s-pill-eta">⏱  ~{svc['eta_hours']}h</span>
+                            <span class="c2s-pill"><span class="c2s-pill-label">Fee</span>₹{total}</span>
+                            <span class="c2s-pill"><span class="c2s-pill-label">ETA</span>~{svc['eta_hours']}h</span>
                         </div>
                         """,
                         unsafe_allow_html=True,
@@ -191,14 +200,18 @@ else:
 
 # ── Closing CTA banner ──────────────────────────────────────────────────────
 cta_banner(
-    "Ready to skip the queue?",
-    "Book any service in under a minute. Pay from your phone. "
-    "Pick up when it's ready.",
+    eyebrow="Ready to skip the queue?",
+    title_html=(
+        "Book any service in "
+        "<span class='c2s-accent'>under a minute</span>."
+    ),
+    subtitle="Pay from your phone. Pick up when it's ready. That's it.",
 )
 
-bcta1, bcta2 = st.columns([1, 1])
+bcta1, bcta2, _ = st.columns([1, 1, 2])
 with bcta1:
-    st.page_link("pages/book.py", label="📝  Book a service", use_container_width=True)
+    st.page_link("pages/book.py", label="Book a service →",
+                 use_container_width=True)
 with bcta2:
-    st.page_link("pages/track.py", label="🔍  Track existing booking",
+    st.page_link("pages/track.py", label="Track existing booking",
                  use_container_width=True)
