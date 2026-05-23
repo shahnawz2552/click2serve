@@ -565,3 +565,63 @@ def cta_banner(eyebrow: str, title_html: str, subtitle: str) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+
+# ── Editorial status badge helper ──────────────────────────────────────────
+# Renders a small typographic glyph + label, used on track / bookings views.
+
+_STATUS_CONFIG = {
+    "Pending":     ("○", MUTED,     "Awaiting start"),
+    "In Progress": ("●", LIME_DEEP, "In progress"),
+    "Ready":       ("●", INK,       "Ready for pickup"),
+    "Delivered":   ("✓", INK,       "Delivered"),
+    "Cancelled":   ("×", MUTED,     "Cancelled"),
+}
+
+
+def status_badge(status: str, *, big: bool = False) -> str:
+    """Return inline HTML for a flat editorial status badge.
+
+    ``big=True`` is used on the customer track-page where the status is
+    the primary thing on the page; ``big=False`` for compact admin lists.
+    """
+    glyph, color, label = _STATUS_CONFIG.get(status, ("●", INK, status))
+    if big:
+        return (
+            f'<div style="display:inline-flex; align-items:center; '
+            f'gap:0.7rem; font-size:1.4rem; font-weight:800; color:{INK}; '
+            f'letter-spacing:-0.025em; line-height:1;">'
+            f'<span style="color:{color}; font-size:1.4em; line-height:1;">{glyph}</span>'
+            f'{label}'
+            f'</div>'
+        )
+    return (
+        f'<span style="display:inline-flex; align-items:center; '
+        f'gap:0.4rem; font-size:0.9rem; font-weight:600; color:{INK};">'
+        f'<span style="color:{color}; font-size:1.05em; line-height:1;">{glyph}</span>'
+        f'{status}'
+        f'</span>'
+    )
+
+
+_PAYMENT_CONFIG = {
+    "verified":    ("●", LIME_DEEP, "Payment verified"),
+    "submitted":   ("○", LIME_DEEP, "Awaiting verification"),
+    "rejected":    ("×", "#B85C5C", "Payment rejected"),
+    "unpaid":      ("○", MUTED,     "Unpaid"),
+}
+
+
+def payment_badge(payment_status: str) -> str:
+    """Inline HTML badge for a booking's payment_status."""
+    glyph, color, label = _PAYMENT_CONFIG.get(
+        payment_status or "unpaid", ("●", INK, payment_status or "")
+    )
+    return (
+        f'<span style="display:inline-flex; align-items:center; '
+        f'gap:0.4rem; font-size:0.88rem; font-weight:600; color:{INK};">'
+        f'<span style="color:{color}; font-size:1.05em; line-height:1;">{glyph}</span>'
+        f'{label}'
+        f'</span>'
+    )

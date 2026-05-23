@@ -13,12 +13,13 @@ inject_global_css()
 
 if not st.session_state.get("logged_in"):
     st.warning("Please sign in to view the revenue report.")
-    st.page_link("pages/login.py", label="→ Owner login", use_container_width=True)
+    st.page_link("pages/login.py", label="Owner login →",
+                 use_container_width=True)
     st.stop()
 
 section_header(
     eyebrow="Owner · Reports",
-    title="Revenue",
+    title="Revenue.",
     subtitle="Track earnings by day and by service. Export anything to CSV.",
 )
 
@@ -58,7 +59,7 @@ m3.metric("Delivered", f"{summary['delivered']}")
 m4.metric("Unpaid", f"{summary['unpaid']}",
           help="Bookings without a recorded payment yet.")
 
-st.markdown("---")
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
 
 # Daily trend
 daily = revenue_by_day(start, end)
@@ -70,15 +71,27 @@ else:
     df_daily["day"] = pd.to_datetime(df_daily["day"])
     df_daily = df_daily.set_index("day").sort_index()
 
-    st.subheader("📈 Daily revenue")
-    st.bar_chart(df_daily["revenue"], height=260, color="#1B4F8A")
+    st.markdown(
+        "<div class='c2s-cat'>Daily revenue</div>"
+        "<h3 style='margin:0 0 0.8rem;'>What you collected, day by day.</h3>",
+        unsafe_allow_html=True,
+    )
+    st.bar_chart(df_daily["revenue"], height=260, color="#0E120F")
 
-    st.subheader("📦 Daily bookings")
-    st.bar_chart(df_daily["bookings"], height=220, color="#F59E0B")
+    st.markdown(
+        "<div class='c2s-cat' style='margin-top:1.4rem;'>Daily bookings</div>"
+        "<h3 style='margin:0 0 0.8rem;'>Volume of work taken in.</h3>",
+        unsafe_allow_html=True,
+    )
+    st.bar_chart(df_daily["bookings"], height=220, color="#9FC95D")
 
 # Per-service breakdown
-st.markdown("---")
-st.subheader("🏆 Service breakdown")
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat'>Service breakdown</div>"
+    "<h3 style='margin:0 0 0.8rem;'>Where the revenue came from.</h3>",
+    unsafe_allow_html=True,
+)
 
 by_service = revenue_by_service(start, end)
 df_svc = pd.DataFrame([dict(r) for r in by_service])
@@ -94,7 +107,7 @@ else:
     st.dataframe(df_svc, use_container_width=True, hide_index=True)
 
     st.download_button(
-        "⬇️ Download CSV",
+        "Download CSV",
         data=df_svc.to_csv(index=False).encode("utf-8"),
         file_name=f"click2serve_revenue_{start}_to_{end}.csv",
         mime="text/csv",

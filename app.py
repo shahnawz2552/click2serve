@@ -61,23 +61,33 @@ with st.sidebar:
 # ── Dynamic navigation based on auth state ─────────────────────────────────
 def build_nav() -> dict[str, list[st.Page]]:
     customer_pages = [
-        st.Page("pages/home.py", title="Home", icon="🏠", default=True),
-        st.Page("pages/book.py", title="Book a Service", icon="📝"),
-        st.Page("pages/pay.py", title="Pay Online", icon="💳"),
-        st.Page("pages/track.py", title="Track Booking", icon="🔍"),
+        st.Page("pages/home.py", title="Home",
+                icon=":material/home:", default=True),
+        st.Page("pages/book.py", title="Book a service",
+                icon=":material/edit_note:"),
+        st.Page("pages/pay.py", title="Pay online",
+                icon=":material/payments:"),
+        st.Page("pages/track.py", title="Track booking",
+                icon=":material/search:"),
     ]
 
     if st.session_state.get("logged_in"):
         owner_pages = [
-            st.Page("pages/dashboard.py", title="Dashboard", icon="📊"),
-            st.Page("pages/bookings.py", title="Bookings", icon="📂"),
-            st.Page("pages/revenue.py", title="Revenue", icon="💰"),
-            st.Page("pages/settings.py", title="Settings", icon="⚙️"),
-            st.Page("pages/logout.py", title="Sign out", icon="🚪"),
+            st.Page("pages/dashboard.py", title="Dashboard",
+                    icon=":material/dashboard:"),
+            st.Page("pages/bookings.py", title="Bookings",
+                    icon=":material/folder_open:"),
+            st.Page("pages/revenue.py", title="Revenue",
+                    icon=":material/savings:"),
+            st.Page("pages/settings.py", title="Settings",
+                    icon=":material/tune:"),
+            st.Page("pages/logout.py", title="Sign out",
+                    icon=":material/logout:"),
         ]
     else:
         owner_pages = [
-            st.Page("pages/login.py", title="Owner Login", icon="🔐"),
+            st.Page("pages/login.py", title="Owner login",
+                    icon=":material/lock:"),
         ]
 
     return {

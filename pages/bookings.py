@@ -11,19 +11,23 @@ from core.db import (
     reject_payment, update_booking_payment, update_booking_status,
     verify_payment,
 )
-from core.styles import inject_global_css, section_header
+from core.styles import (
+    inject_global_css, payment_badge, section_header, status_badge,
+)
 
 inject_global_css()
 
 if not st.session_state.get("logged_in"):
     st.warning("Please sign in to manage bookings.")
-    st.page_link("pages/login.py", label="→ Owner login", use_container_width=True)
+    st.page_link("pages/login.py", label="Owner login →",
+                 use_container_width=True)
     st.stop()
 
 section_header(
     eyebrow="Owner · Queue",
-    title="Bookings",
-    subtitle="Filter, update statuses, verify online payments — everything from one screen.",
+    title="Bookings.",
+    subtitle="Filter, update statuses, verify online payments — "
+             "everything from one screen.",
 )
 
 with st.container(border=True):
@@ -45,7 +49,12 @@ if not bookings:
     st.info("No bookings match the current filters.")
     st.stop()
 
-st.caption(f"Showing **{len(bookings)}** booking(s). Newest first.")
+st.markdown(
+    f"<p style='color:#5A6157; margin:0.6rem 0 1rem; font-weight:500;'>"
+    f"Showing <b style='color:#0E120F;'>{len(bookings)}</b> booking(s). "
+    f"Newest first.</p>",
+    unsafe_allow_html=True,
+)
 
 # Quick summary table
 df = pd.DataFrame([
@@ -65,14 +74,18 @@ df = pd.DataFrame([
 st.dataframe(df, use_container_width=True, hide_index=True)
 
 st.download_button(
-    "⬇️ Export filtered bookings (CSV)",
+    "Export filtered bookings — CSV",
     data=df.to_csv(index=False).encode("utf-8"),
     file_name=f"click2serve_bookings_{date.today().isoformat()}.csv",
     mime="text/csv",
 )
 
-st.markdown("---")
-st.subheader("📝 Update a booking")
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat'>Detail · Update</div>"
+    "<h3 style='margin:0 0 1rem;'>Open a booking.</h3>",
+    unsafe_allow_html=True,
+)
 
 # Booking selector
 labels = {
@@ -88,26 +101,55 @@ booking = next(b for b in bookings if b["id"] == selected_id)
 
 with st.container(border=True):
     info_cols = st.columns([1, 1, 1])
-    info_cols[0].markdown(f"**Customer**\n\n{booking['customer_name']}\n\n📱 {booking['customer_phone']}")
-    info_cols[1].markdown(f"**Service**\n\n{booking['service_name']}\n\n📂 {booking['service_category']}")
+    info_cols[0].markdown(
+        f"<div class='c2s-cat'>Customer</div>"
+        f"<div style='font-weight:700; font-size:1.05rem;'>"
+        f"{booking['customer_name']}</div>"
+        f"<div style='color:#5A6157; font-size:0.9rem;'>"
+        f"{booking['customer_phone']}</div>",
+        unsafe_allow_html=True,
+    )
+    info_cols[1].markdown(
+        f"<div class='c2s-cat'>Service</div>"
+        f"<div style='font-weight:700; font-size:1.05rem;'>"
+        f"{booking['service_name']}</div>"
+        f"<div style='color:#5A6157; font-size:0.9rem;'>"
+        f"{booking['service_category']}</div>",
+        unsafe_allow_html=True,
+    )
     info_cols[2].markdown(
-        f"**Fees**\n\nTotal: ₹{booking['total_fee']}\n\n"
-        f"Paid: ₹{booking['amount_paid']} ({booking['payment_method']})"
+        f"<div class='c2s-cat'>Fees</div>"
+        f"<div style='font-weight:700; font-size:1.05rem;'>"
+        f"Total ₹{booking['total_fee']}</div>"
+        f"<div style='color:#5A6157; font-size:0.9rem;'>"
+        f"Paid ₹{booking['amount_paid']} ({booking['payment_method']})</div>",
+        unsafe_allow_html=True,
     )
 
     if booking["customer_email"]:
-        st.caption(f"✉️ {booking['customer_email']}")
+        st.caption(f"Email: {booking['customer_email']}")
     if booking["notes"]:
         st.info(f"**Customer notes:** {booking['notes']}")
 
     docs = list_documents(booking["id"])
     if docs:
-        st.markdown("**📎 Attached documents**")
+        st.markdown(
+            "<div class='c2s-cat' style='margin-top:0.8rem;'>Attached documents</div>",
+            unsafe_allow_html=True,
+        )
         for d in docs:
-            st.write(f"• {d['file_name']}  _({d['size_bytes']:,} bytes)_  → `{d['file_path']}`")
+            st.write(f"— {d['file_name']}  _({d['size_bytes']:,} bytes)_  → `{d['file_path']}`")
 
-    st.markdown("---")
-    st.markdown("**Update status**")
+    st.markdown("<hr class='c2s-rule' style='margin:1.6rem 0 1rem;'/>",
+                unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='display:flex; align-items:center; "
+        f"justify-content:space-between; margin-bottom:0.8rem;'>"
+        f"<span class='c2s-cat' style='margin:0;'>Status</span>"
+        f"{status_badge(booking['status'])}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
     # One-click status flow buttons
     flow_cols = st.columns(len(STATUSES))
@@ -116,54 +158,72 @@ with st.container(border=True):
         label = ("✓ " if is_current else "") + status
         if col.button(label, key=f"status_{status}", use_container_width=True,
                       disabled=is_current,
-                      type="primary" if status == "Ready" and not is_current else "secondary"):
+                      type=("primary"
+                            if status == "Ready" and not is_current
+                            else "secondary")):
             update_booking_status(booking["id"], status)
             st.success(f"Status updated to **{status}**.")
             st.rerun()
 
-    st.markdown("---")
-    st.markdown("**Mark payment**")
+    st.markdown("<hr class='c2s-rule' style='margin:1.6rem 0 1rem;'/>",
+                unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='display:flex; align-items:center; "
+        f"justify-content:space-between; margin-bottom:0.8rem;'>"
+        f"<span class='c2s-cat' style='margin:0;'>Payment</span>"
+        f"{payment_badge(booking['payment_status'] or 'unpaid')}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
     # If the customer submitted a UTR online, surface it for one-click verify
     if booking["payment_status"] == "submitted":
         st.warning(
-            "🔔 **Online payment awaiting verification**  \n"
+            "**Online payment awaiting verification.**  \n"
             f"Customer paid via UPI · UTR  `{booking['payment_ref']}` · "
             f"Amount  ₹{booking['amount_paid']}"
         )
         st.caption(
-            "Open your UPI app and look for an incoming credit matching this UTR / amount. "
-            "If it's there, click **Verify**. Otherwise click **Reject** and the customer "
-            "will be prompted to retry."
+            "Open your UPI app and look for an incoming credit matching this "
+            "UTR / amount. If it's there, click **Verify**. Otherwise click "
+            "**Reject** and the customer will be prompted to retry."
         )
         v1, v2 = st.columns(2)
-        if v1.button("✅ Verify payment", key="verify_btn",
+        if v1.button("Verify payment →", key="verify_btn",
                      use_container_width=True, type="primary"):
             verify_payment(booking["id"])
             st.success("Payment verified. Customer will see the confirmation.")
             st.rerun()
-        if v2.button("❌ Reject payment proof", key="reject_btn",
+        if v2.button("Reject payment proof", key="reject_btn",
                      use_container_width=True):
             reject_payment(booking["id"])
             st.warning("Payment proof rejected. Customer can retry.")
             st.rerun()
-        st.markdown("---")
-        st.caption("Or override manually below if you collected cash / card directly.")
+        st.markdown("<hr class='c2s-rule' style='margin:1.4rem 0 1rem;'/>",
+                    unsafe_allow_html=True)
+        st.caption(
+            "Or override manually below if you collected cash / card directly."
+        )
     elif booking["payment_status"] == "verified":
-        st.success(f"✅ Payment verified · ₹{booking['amount_paid']} via "
-                   f"{booking['payment_method']}"
-                   + (f" · UTR `{booking['payment_ref']}`" if booking['payment_ref'] else ""))
+        st.success(
+            f"Payment verified · ₹{booking['amount_paid']} via "
+            f"{booking['payment_method']}"
+            + (f" · UTR `{booking['payment_ref']}`"
+               if booking['payment_ref'] else "")
+        )
 
     p1, p2, p3 = st.columns([1.2, 1.2, 1])
-    new_method = p1.selectbox("Method", PAYMENT_METHODS,
-                              index=PAYMENT_METHODS.index(booking["payment_method"])
-                              if booking["payment_method"] in PAYMENT_METHODS else 0)
+    new_method = p1.selectbox(
+        "Method", PAYMENT_METHODS,
+        index=(PAYMENT_METHODS.index(booking["payment_method"])
+               if booking["payment_method"] in PAYMENT_METHODS else 0),
+    )
     new_amount = p2.number_input(
         "Amount paid (₹)", min_value=0,
         value=int(booking["amount_paid"] or booking["total_fee"]),
         step=10,
     )
-    if p3.button("💾 Save payment", use_container_width=True, type="primary"):
+    if p3.button("Save payment", use_container_width=True, type="primary"):
         update_booking_payment(booking["id"], method=new_method,
                                amount=int(new_amount))
         st.success("Payment updated.")

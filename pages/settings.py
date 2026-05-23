@@ -11,18 +11,23 @@ inject_global_css()
 
 if not st.session_state.get("logged_in"):
     st.warning("Please sign in to access settings.")
-    st.page_link("pages/login.py", label="→ Owner login", use_container_width=True)
+    st.page_link("pages/login.py", label="Owner login →",
+                 use_container_width=True)
     st.stop()
 
 section_header(
     eyebrow="Owner · Settings",
-    title="Shop &amp; payment settings",
+    title="Shop &amp; payment settings.",
     subtitle="Configure your shop info and the UPI ID that customers will pay to.",
 )
 
 shop = get_shop_config()
 
-st.markdown("### Shop information")
+st.markdown(
+    "<div class='c2s-cat'>Section 01</div>"
+    "<h3 style='margin:0 0 1rem;'>Shop information.</h3>",
+    unsafe_allow_html=True,
+)
 with st.form("shop_info"):
     c1, c2 = st.columns(2)
     shop_name = c1.text_input("Shop name", value=shop["shop_name"] or "Click2Serve")
@@ -36,11 +41,13 @@ with st.form("shop_info"):
                                   value=shop["opening_hours"] or "",
                                   placeholder="e.g. 9:00 AM – 9:00 PM")
 
-    address = st.text_area("Shop address",
-                           value=shop["address"] or "", height=80,
-                           placeholder="Full address shown to customers on their receipt.")
+    address = st.text_area(
+        "Shop address",
+        value=shop["address"] or "", height=80,
+        placeholder="Full address shown to customers on their receipt.",
+    )
 
-    save_info = st.form_submit_button("💾 Save shop info", type="primary",
+    save_info = st.form_submit_button("Save shop info →", type="primary",
                                       use_container_width=True)
 
 if save_info:
@@ -52,37 +59,47 @@ if save_info:
     st.success("Shop information updated.")
     st.rerun()
 
-st.markdown("---")
-st.markdown("### 💳 Online payments (UPI)")
-st.caption(
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat'>Section 02</div>"
+    "<h3 style='margin:0 0 0.5rem;'>Online payments — UPI.</h3>"
+    "<p style='color:#5A6157; margin:0 0 1rem;'>"
     "Customers will scan a QR code that pays your UPI ID directly. "
     "After they pay they paste the UTR back into the app for you to verify."
+    "</p>",
+    unsafe_allow_html=True,
 )
 
 current_vpa = shop["upi_vpa"] or ""
 current_payee = shop["upi_payee_name"] or shop["shop_name"] or ""
 
 if current_vpa and is_valid_vpa(current_vpa):
-    st.success(f"✅ Online payments are **enabled**. Customers will pay to `{current_vpa}`.")
+    st.success(
+        f"Online payments are **enabled**. Customers will pay to `{current_vpa}`."
+    )
 else:
-    st.info("ℹ️ Online payments are **not configured yet**. "
-            "Add your UPI ID below to enable the customer pay page.")
+    st.info(
+        "Online payments are **not configured yet**. "
+        "Add your UPI ID below to enable the customer pay page."
+    )
 
 with st.form("upi_form"):
     upi_vpa = st.text_input(
-        "UPI ID (VPA) *",
+        "UPI ID (VPA)",
         value=current_vpa,
         placeholder="e.g. yourname@okaxis  ·  shop@upi  ·  9876543210@ybl",
-        help="Find your UPI ID inside PhonePe / GPay / Paytm under 'My UPI' "
-             "or 'Bank Account → Manage UPI ID'.",
+        help=(
+            "Find your UPI ID inside PhonePe / GPay / Paytm under 'My UPI' "
+            "or 'Bank Account → Manage UPI ID'."
+        ),
     )
     upi_payee_name = st.text_input(
         "Payee name (shown to customer)",
         value=current_payee,
         placeholder="e.g. Click2Serve Bharatpur",
     )
-    save_upi = st.form_submit_button("💾 Save UPI settings",
-                                     type="primary", use_container_width=True)
+    save_upi = st.form_submit_button("Save UPI settings →", type="primary",
+                                     use_container_width=True)
 
 if save_upi:
     if upi_vpa and not is_valid_vpa(upi_vpa):
@@ -95,8 +112,8 @@ if save_upi:
         st.success("UPI settings saved. The customer pay page is now live.")
         st.rerun()
 
-st.markdown("---")
-with st.expander("🚀 Want auto-reconciled payments? (Razorpay roadmap)"):
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+with st.expander("Want auto-reconciled payments? (Razorpay roadmap)"):
     st.markdown(
         """
         The current UPI flow needs you to confirm each UTR manually in your

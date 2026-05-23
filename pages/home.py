@@ -62,7 +62,7 @@ f1, f2, f3 = st.columns(3, gap="medium")
 with f1:
     feature_card(
         "01",
-        "🚀",
+        "●",
         "Fast turnaround",
         "Most government and bill services completed in 24–48 hours, "
         "with a tracked status from the moment you book.",
@@ -70,7 +70,7 @@ with f1:
 with f2:
     feature_card(
         "02",
-        "💳",
+        "●",
         "Pay from your phone",
         "Scan a QR or tap to open PhonePe, GPay, Paytm or any UPI app. "
         "No cash, no card swipe, no extra fees.",
@@ -78,7 +78,7 @@ with f2:
 with f3:
     feature_card(
         "03",
-        "🔒",
+        "●",
         "Private &amp; secure",
         "Your documents stay on the shop's local storage. Token + mobile "
         "required to view a booking — no public links.",
