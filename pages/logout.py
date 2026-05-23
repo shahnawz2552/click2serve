@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import streamlit as st
 
+from core.styles import inject_global_css
+
+inject_global_css()
+
 for key in ("logged_in", "username", "remember_login"):
     st.session_state.pop(key, None)
 

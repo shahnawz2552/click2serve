@@ -9,6 +9,7 @@ from __future__ import annotations
 import streamlit as st
 
 from core.db import init_db
+from core.styles import inject_global_css
 
 # ── Bootstrap database on first request ─────────────────────────────────────
 init_db()
@@ -26,16 +27,27 @@ st.set_page_config(
     },
 )
 
+# ── Apply the global stylesheet to every page ───────────────────────────────
+inject_global_css()
+
 # ── Sidebar branding (shown on every page) ──────────────────────────────────
 with st.sidebar:
     st.markdown(
         """
-        <div style="text-align: center; padding: 0.5rem 0 1rem 0;">
-            <div style="font-size: 2.2rem;">🛎️</div>
-            <div style="font-size: 1.2rem; font-weight: 700; color: #1B4F8A;">
+        <div style="text-align: center; padding: 0.6rem 0 1.4rem 0;">
+            <div style="
+                width: 56px; height: 56px;
+                border-radius: 16px;
+                background: linear-gradient(135deg, #7B68EE 0%, #FB3F8C 100%);
+                display: inline-flex; align-items: center; justify-content: center;
+                font-size: 1.7rem;
+                margin-bottom: 0.6rem;
+                box-shadow: 0 8px 22px rgba(123,104,238,0.32);
+            ">🛎️</div>
+            <div style="font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; color: #0A0E27;">
                 Click2Serve
             </div>
-            <div style="font-size: 0.8rem; color: #666;">
+            <div style="font-size: 0.78rem; color: #5C5F7C; font-weight: 500;">
                 Digital service hub
             </div>
         </div>

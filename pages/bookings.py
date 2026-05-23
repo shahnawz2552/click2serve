@@ -11,13 +11,20 @@ from core.db import (
     reject_payment, update_booking_payment, update_booking_status,
     verify_payment,
 )
+from core.styles import inject_global_css, section_header
+
+inject_global_css()
 
 if not st.session_state.get("logged_in"):
     st.warning("Please sign in to manage bookings.")
     st.page_link("pages/login.py", label="→ Owner login", use_container_width=True)
     st.stop()
 
-st.title("📂 Bookings Queue")
+section_header(
+    eyebrow="Owner · Queue",
+    title="Bookings",
+    subtitle="Filter, update statuses, verify online payments — everything from one screen.",
+)
 
 with st.container(border=True):
     f1, f2, f3, f4 = st.columns([1.5, 1.2, 1.2, 2])

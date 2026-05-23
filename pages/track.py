@@ -4,6 +4,9 @@ from __future__ import annotations
 import streamlit as st
 
 from core.db import get_booking_by_token, list_documents
+from core.styles import inject_global_css, section_header
+
+inject_global_css()
 
 STATUS_BADGES = {
     "Pending": ("🟡", "We have received your request and will start shortly."),
@@ -13,8 +16,11 @@ STATUS_BADGES = {
     "Cancelled": ("❌", "This booking was cancelled. Please contact the shop for details."),
 }
 
-st.title("🔍 Track Your Booking")
-st.caption("Enter the token number you received when booking.")
+section_header(
+    eyebrow="Track booking",
+    title="Where's my service at?",
+    subtitle="Enter your token and the mobile number you used at booking.",
+)
 
 with st.form("track_form"):
     c1, c2 = st.columns(2)

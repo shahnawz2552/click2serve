@@ -5,13 +5,20 @@ import streamlit as st
 
 from core.db import get_shop_config, update_shop_config
 from core.payments import is_valid_vpa
+from core.styles import inject_global_css, section_header
+
+inject_global_css()
 
 if not st.session_state.get("logged_in"):
     st.warning("Please sign in to access settings.")
     st.page_link("pages/login.py", label="→ Owner login", use_container_width=True)
     st.stop()
 
-st.title("⚙️ Shop Settings")
+section_header(
+    eyebrow="Owner · Settings",
+    title="Shop &amp; payment settings",
+    subtitle="Configure your shop info and the UPI ID that customers will pay to.",
+)
 
 shop = get_shop_config()
 

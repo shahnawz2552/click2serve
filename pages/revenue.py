@@ -7,13 +7,20 @@ import pandas as pd
 import streamlit as st
 
 from core.db import revenue_by_day, revenue_by_service, revenue_summary
+from core.styles import inject_global_css, section_header
+
+inject_global_css()
 
 if not st.session_state.get("logged_in"):
     st.warning("Please sign in to view the revenue report.")
     st.page_link("pages/login.py", label="→ Owner login", use_container_width=True)
     st.stop()
 
-st.title("💰 Revenue Report")
+section_header(
+    eyebrow="Owner · Reports",
+    title="Revenue",
+    subtitle="Track earnings by day and by service. Export anything to CSV.",
+)
 
 # Date range presets
 today = date.today()

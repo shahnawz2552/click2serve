@@ -6,12 +6,18 @@ import re
 import streamlit as st
 
 from core.db import create_booking, get_service, list_services, save_document
+from core.styles import inject_global_css, section_header
+
+inject_global_css()
 
 PHONE_RE = re.compile(r"^[6-9]\d{9}$")  # Indian mobile pattern; relax if needed
 
 
-st.title("📝 Book a Service")
-st.caption("Fill in your details — you'll receive a token number to track your booking.")
+section_header(
+    eyebrow="Book a service",
+    title="Tell us what you need",
+    subtitle="Fill in your details and you'll get a token number to track your booking.",
+)
 
 services = list_services(active_only=True)
 if not services:

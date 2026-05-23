@@ -8,14 +8,20 @@ import streamlit as st
 
 from core.auth import change_password
 from core.db import pending_verification_count, revenue_by_service, today_kpis
+from core.styles import inject_global_css, section_header
+
+inject_global_css()
 
 if not st.session_state.get("logged_in"):
     st.warning("Please sign in to access the owner dashboard.")
     st.page_link("pages/login.py", label="→ Owner login", use_container_width=True)
     st.stop()
 
-st.title(f"📊 Dashboard")
-st.caption(f"Welcome back, **{st.session_state.get('username', 'owner')}**.")
+section_header(
+    eyebrow="Owner",
+    title=f"Welcome back, {st.session_state.get('username', 'owner').title()}",
+    subtitle="Today's queue, today's revenue, and anything that needs your attention.",
+)
 
 # Surface pending UPI verifications immediately — this is the highest-priority
 # thing an owner needs to act on each day.

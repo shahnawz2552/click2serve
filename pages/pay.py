@@ -23,9 +23,15 @@ from core.payments import (
     is_valid_vpa,
     qr_svg,
 )
+from core.styles import inject_global_css, section_header
 
-st.title("💳 Pay Online")
-st.caption("Pay securely via UPI from any app — PhonePe, Google Pay, Paytm, BHIM, and more.")
+inject_global_css()
+
+section_header(
+    eyebrow="Pay online",
+    title="Fast, secure UPI payment",
+    subtitle="Scan or tap to pay from PhonePe, Google Pay, Paytm, BHIM — any UPI app on your phone.",
+)
 
 # Pre-fill from book.py / track.py via session state
 default_token = st.session_state.get("pay_token", "")
