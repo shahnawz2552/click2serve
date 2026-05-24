@@ -1,12 +1,12 @@
-"""Customer landing page — editorial hero, stats, services grid, CTA."""
+"""Customer landing page — editorial hero, trust badges, services grid, CTA."""
 from __future__ import annotations
 
 import streamlit as st
 
 from core.db import list_categories, list_services
 from core.styles import (
-    cta_banner, feature_card, hero, how_step, inject_global_css,
-    section_header, stat_strip,
+    cta_banner, hero, how_step, inject_global_css,
+    section_header,
 )
 
 inject_global_css()
@@ -15,11 +15,10 @@ inject_global_css()
 hero(
     badge="Click2Serve · Digital service hub",
     title_html=(
-        "One shop for every "
-        "<span class='c2s-accent'>government</span> "
-        "&amp; "
-        "<span class='c2s-italic'>utility</span> "
-        "service."
+        "Fast, reliable "
+        "<span class='c2s-accent'>digital services</span> "
+        "at your "
+        "<span class='c2s-italic'>doorstep</span>."
     ),
     subtitle=(
         "Skip the queue. Book passport, driving licence, bills, challans and "
@@ -27,7 +26,7 @@ hero(
     ),
 )
 
-# Hero CTAs sit right after the hero — real Streamlit buttons so navigation works
+# Hero CTAs
 hcta1, hcta2, hcta3, _ = st.columns([1, 1, 1, 2])
 with hcta1:
     st.page_link("pages/book.py", label="Book a service →",
@@ -39,50 +38,52 @@ with hcta3:
     st.page_link("pages/pay.py", label="Pay online",
                  use_container_width=True)
 
-st.markdown("<div style='height:2rem;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='height:1.4rem;'></div>", unsafe_allow_html=True)
 
-# ── Big-number stats strip ──────────────────────────────────────────────────
+# ── Trust signals ───────────────────────────────────────────────────────────
 all_services = list_services(active_only=True)
 all_categories = list_categories()
-stat_strip([
-    (f"{len(all_services)}<sup>+</sup>", "Services live"),
-    (f"{len(all_categories)}", "Categories"),
-    ("100<sup>%</sup>", "UPI ready"),
-    ("~24<sup>h</sup>", "Typical ETA"),
-])
 
-# ── Why customers love us ───────────────────────────────────────────────────
-section_header(
-    eyebrow="Why Click2Serve",
-    title="Less waiting. More doing.",
-    subtitle="Three things this shop does differently — built so you spend less time at the counter.",
-)
-
-f1, f2, f3 = st.columns(3, gap="medium")
-with f1:
-    feature_card(
-        "01",
-        "●",
-        "Fast turnaround",
-        "Most government and bill services completed in 24–48 hours, "
-        "with a tracked status from the moment you book.",
-    )
-with f2:
-    feature_card(
-        "02",
-        "●",
-        "Pay from your phone",
-        "Scan a QR or tap to open PhonePe, GPay, Paytm or any UPI app. "
-        "No cash, no card swipe, no extra fees.",
-    )
-with f3:
-    feature_card(
-        "03",
-        "●",
-        "Private &amp; secure",
-        "Your documents stay on the shop's local storage. Token + mobile "
-        "required to view a booking — no public links.",
-    )
+t1, t2, t3 = st.columns(3, gap="medium")
+with t1:
+    with st.container(border=True):
+        st.markdown(
+            "<div class='c2s-cat'>Trust signal · 01</div>"
+            "<div style='font-size:1.6rem; font-weight:900; "
+            "letter-spacing:-0.03em; color:#0E120F; line-height:1.1;'>"
+            "🔒 Secure Payments</div>"
+            "<div style='color:#5A6157; margin-top:0.4rem; "
+            "font-size:0.93rem; line-height:1.5;'>"
+            "UPI-only flow with end-to-end traceability via UTR. No card "
+            "data ever touches our servers.</div>",
+            unsafe_allow_html=True,
+        )
+with t2:
+    with st.container(border=True):
+        st.markdown(
+            f"<div class='c2s-cat'>Trust signal · 02</div>"
+            f"<div style='font-size:1.6rem; font-weight:900; "
+            f"letter-spacing:-0.03em; color:#0E120F; line-height:1.1;'>"
+            f"📋 {max(len(all_services), 12)}+ Services</div>"
+            f"<div style='color:#5A6157; margin-top:0.4rem; "
+            f"font-size:0.93rem; line-height:1.5;'>"
+            f"Government IDs, vehicle services, bill payments, document "
+            f"work — all under one roof.</div>",
+            unsafe_allow_html=True,
+        )
+with t3:
+    with st.container(border=True):
+        st.markdown(
+            "<div class='c2s-cat'>Trust signal · 03</div>"
+            "<div style='font-size:1.6rem; font-weight:900; "
+            "letter-spacing:-0.03em; color:#0E120F; line-height:1.1;'>"
+            "⚡ Same-day Processing</div>"
+            "<div style='color:#5A6157; margin-top:0.4rem; "
+            "font-size:0.93rem; line-height:1.5;'>"
+            "Bills and documents complete in hours. Govt applications "
+            "submitted same business day.</div>",
+            unsafe_allow_html=True,
+        )
 
 # ── How it works ────────────────────────────────────────────────────────────
 section_header(
@@ -94,22 +95,19 @@ section_header(
 s1, s2, s3 = st.columns(3, gap="medium")
 with s1:
     how_step(
-        1,
-        "Book online",
+        1, "Book online",
         "Pick the service, fill in your details, and upload any supporting "
         "documents. You'll get a token like <b>C2S-A4F2</b>.",
     )
 with s2:
     how_step(
-        2,
-        "Pay via UPI",
+        2, "Pay via UPI",
         "Scan the shop's QR code or tap to open your UPI app. Pay the exact "
         "amount and paste the UTR back into the app.",
     )
 with s3:
     how_step(
-        3,
-        "Track &amp; pick up",
+        3, "Track &amp; pick up",
         "Watch the status move from <i>Pending</i> to <i>Ready</i>. Walk in "
         "to pick up your finished work — no waiting in line.",
     )
@@ -118,7 +116,8 @@ with s3:
 section_header(
     eyebrow="What we do",
     title="Browse our services.",
-    subtitle="Government IDs, vehicle services, bill payments, document services — all under one roof.",
+    subtitle="Government IDs, vehicle services, bill payments, "
+             "document services — all under one roof.",
 )
 
 # Filter row
@@ -134,7 +133,6 @@ with fc2:
         label_visibility="collapsed",
     )
 
-# Apply filters
 services = all_services
 if chosen != "All categories":
     services = [s for s in services if s["category"] == chosen]
@@ -143,7 +141,7 @@ if search:
     services = [
         s for s in services
         if needle in s["name"].lower()
-        or needle in s["description"].lower()
+        or needle in (s.get("description") or "").lower()
         or needle in s["category"].lower()
     ]
 
@@ -159,22 +157,18 @@ st.markdown(
 if not services:
     st.info("No services match your search. Try a different keyword.")
 else:
-    # 3-column responsive card grid
     for i in range(0, len(services), 3):
         cols = st.columns(3, gap="medium")
         for col, svc in zip(cols, services[i:i + 3]):
-            total = svc["govt_fee"] + svc["service_charge"]
+            total = (svc["govt_fee"] or 0) + (svc["service_charge"] or 0)
             with col:
                 with st.container(border=True):
                     st.markdown(
-                        f'<div class="c2s-cat">{svc["category"]}</div>',
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown(
+                        f'<div class="c2s-cat">{svc["category"]}</div>'
                         f'<div class="c2s-svc-name">{svc["name"]}</div>',
                         unsafe_allow_html=True,
                     )
-                    desc = svc["description"]
+                    desc = svc.get("description") or ""
                     short = desc[:108] + ("…" if len(desc) > 108 else "")
                     st.markdown(
                         f'<div class="c2s-svc-desc">{short}</div>',
@@ -190,11 +184,14 @@ else:
                         unsafe_allow_html=True,
                     )
                     if st.button(
-                        "Book this service →",
+                        "Book Now →",
                         key=f"book_{svc['id']}",
                         use_container_width=True,
                         type="primary",
                     ):
+                        # Pass the service via URL — book.py reads it from
+                        # st.query_params on load.
+                        st.query_params["service"] = str(svc["id"])
                         st.session_state["selected_service_id"] = svc["id"]
                         st.switch_page("pages/book.py")
 

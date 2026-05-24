@@ -24,8 +24,15 @@ if not services:
     st.error("No services are currently available. Please check back later.")
     st.stop()
 
-# Pre-select if user came from a service card on the home page
+# Pre-select if user came from a service card on the home page —
+# either via st.query_params (?service=ID) or session_state.
 default_idx = 0
+qp_service = st.query_params.get("service")
+if qp_service:
+    try:
+        st.session_state["selected_service_id"] = int(qp_service)
+    except (TypeError, ValueError):
+        pass
 preselected = st.session_state.get("selected_service_id")
 if preselected:
     for i, s in enumerate(services):
@@ -143,6 +150,8 @@ if submitted:
 
     # Clear pre-selection so a fresh booking starts clean
     st.session_state.pop("selected_service_id", None)
+    if "service" in st.query_params:
+        del st.query_params["service"]
 
     st.success("Booking confirmed.")
     with st.container(border=True):

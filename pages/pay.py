@@ -63,9 +63,12 @@ if booking["payment_status"] == "verified":
 if booking["payment_status"] == "submitted":
     st.warning(
         "Your payment is awaiting verification by the shop owner. "
-        f"You submitted UTR **{booking['payment_ref']}** for ₹{booking['amount_paid']}."
+        f"You submitted UTR **{booking.get('payment_ref')}** for "
+        f"₹{booking['amount_paid']}."
     )
-    st.caption("If this looks wrong, contact the shop directly to correct it.")
+    st.caption(
+        "✅ UTR submitted. The shop owner typically verifies within 15 minutes."
+    )
     st.stop()
 
 # ── Show booking summary ─────────────────────────────────────────────────────
@@ -178,8 +181,18 @@ with st.form("submit_utr"):
         "UTR / Transaction reference",
         placeholder="e.g. 412345678901",
         max_chars=22,
-        help="The 12-digit reference your UPI app shows after a successful payment.",
+        help=(
+            "The 12-digit reference your UPI app shows after a successful "
+            "payment. Tap and hold inside your UPI app's transaction details "
+            "to copy it."
+        ),
     )
+    if utr.strip():
+        # Show a copy-able preview of what was typed — st.code adds the
+        # built-in copy-to-clipboard button in modern Streamlit.
+        st.caption("Preview — tap the icon on the right to copy:")
+        st.code(utr.strip(), language=None)
+
     submit = st.form_submit_button("Submit payment proof →",
                                    type="primary",
                                    use_container_width=True)
@@ -191,8 +204,7 @@ if submit:
 
     submit_payment_proof(booking["id"], ref=utr, amount=amount_due, method="UPI")
     st.success(
-        "Payment proof submitted. The shop owner will verify it shortly. "
-        "You'll see the confirmation here when they do."
+        "✅ UTR submitted. The shop owner typically verifies within 15 minutes."
     )
     st.balloons()
     # Clear pre-fill so a refresh shows the awaiting-verification banner

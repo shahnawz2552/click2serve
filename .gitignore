@@ -12,4 +12,6 @@ data/*.db
 data/*.db-journal
 uploads/*
 !uploads/.gitkeep
+# Secrets — NEVER commit. The example template lives at
+# .streamlit/secrets.toml.example
 .streamlit/secrets.toml

@@ -1,8 +1,11 @@
 """Click2Serve — main entry point.
 
-Uses st.navigation to dynamically route between Customer pages and Owner
-(admin) pages based on session state. The owner sees admin pages only after
-signing in; customers never see them.
+Customers see only customer-facing pages. The owner login is hidden behind
+a special URL — visit ``?owner=1`` to reveal it. Once logged in, owner
+pages are shown; on logout they disappear again.
+
+Why this gate? Prevents casual visitors from probing the login form (small
+bonus security through obscurity), and keeps the public sidebar clean.
 """
 from __future__ import annotations
 
@@ -11,7 +14,7 @@ import streamlit as st
 from core.db import init_db
 from core.styles import inject_global_css
 
-# ── Bootstrap database on first request ─────────────────────────────────────
+# ── Bootstrap database on first request (Supabase) ──────────────────────────
 init_db()
 
 # ── Page config (only the entry point sets this) ────────────────────────────
@@ -29,6 +32,26 @@ st.set_page_config(
 
 # ── Apply the global stylesheet to every page ───────────────────────────────
 inject_global_css()
+
+
+def _owner_route_visible() -> bool:
+    """Owner login is shown only when the URL contains the magic flag.
+
+    Once an owner is signed in, we keep the owner pages visible for the
+    duration of the session — even if they navigate away from the magic
+    URL.
+    """
+    if st.session_state.get("logged_in"):
+        return True
+    qp = st.query_params
+    # Accept ?owner, ?owner=1, ?owner=true, /?owner=login, etc.
+    raw = qp.get("owner")
+    if raw is None:
+        return False
+    if isinstance(raw, list):
+        raw = raw[0] if raw else ""
+    return str(raw).lower() not in ("0", "false", "no")
+
 
 # ── Sidebar branding (shown on every page) ──────────────────────────────────
 with st.sidebar:
@@ -58,7 +81,8 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-# ── Dynamic navigation based on auth state ─────────────────────────────────
+
+# ── Dynamic navigation based on auth + URL state ──────────────────────────
 def build_nav() -> dict[str, list[st.Page]]:
     customer_pages = [
         st.Page("pages/home.py", title="Home",
@@ -71,12 +95,16 @@ def build_nav() -> dict[str, list[st.Page]]:
                 icon=":material/search:"),
     ]
 
+    pages: dict[str, list[st.Page]] = {"Customer": customer_pages}
+
     if st.session_state.get("logged_in"):
-        owner_pages = [
+        pages["Owner"] = [
             st.Page("pages/dashboard.py", title="Dashboard",
                     icon=":material/dashboard:"),
             st.Page("pages/bookings.py", title="Bookings",
                     icon=":material/folder_open:"),
+            st.Page("pages/services.py", title="Services",
+                    icon=":material/miscellaneous_services:"),
             st.Page("pages/revenue.py", title="Revenue",
                     icon=":material/savings:"),
             st.Page("pages/settings.py", title="Settings",
@@ -84,16 +112,14 @@ def build_nav() -> dict[str, list[st.Page]]:
             st.Page("pages/logout.py", title="Sign out",
                     icon=":material/logout:"),
         ]
-    else:
-        owner_pages = [
+    elif _owner_route_visible():
+        pages["Owner"] = [
             st.Page("pages/login.py", title="Owner login",
                     icon=":material/lock:"),
         ]
+    # else: customer view only — no owner section in the sidebar.
 
-    return {
-        "Customer": customer_pages,
-        "Owner": owner_pages,
-    }
+    return pages
 
 
 nav = st.navigation(build_nav())

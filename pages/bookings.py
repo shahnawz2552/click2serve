@@ -1,4 +1,9 @@
-"""Owner bookings queue — view, filter, update status, mark payment."""
+"""Owner bookings queue — view, filter, update status, mark payment.
+
+When the owner changes a booking's status, we fire a WhatsApp alert to
+the customer's phone via core.notifications. The alert is best-effort
+and never blocks the actual update.
+"""
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -11,6 +16,7 @@ from core.db import (
     reject_payment, update_booking_payment, update_booking_status,
     verify_payment,
 )
+from core.notifications import notify_status_change
 from core.styles import (
     inject_global_css, payment_badge, section_header, status_badge,
 )
@@ -65,9 +71,10 @@ df = pd.DataFrame([
         "Phone": b["customer_phone"],
         "Status": b["status"],
         "Payment": b["payment_method"],
+        "Pay status": b.get("payment_status") or "unpaid",
         "Paid (₹)": b["amount_paid"],
         "Total (₹)": b["total_fee"],
-        "Created": b["created_at"].replace("T", " "),
+        "Created": (b["created_at"] or "").replace("T", " ")[:19],
     }
     for b in bookings
 ])
@@ -87,11 +94,19 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Booking selector
-labels = {
-    b["id"]: f"{b['token']} — {b['service_name']} — {b['customer_name']} ({b['status']})"
-    for b in bookings
-}
+# Booking selector — surface unverified UPI bookings first by sorting them up
+def _selector_label(b: dict) -> str:
+    flag = " ⚠ unverified UPI" if b.get("payment_status") == "submitted" else ""
+    return f"{b['token']} — {b['service_name']} — {b['customer_name']} ({b['status']}){flag}"
+
+
+# Sort: unverified-UPI first, then newest-first within each group
+sorted_bookings = sorted(
+    bookings,
+    key=lambda b: (b.get("payment_status") != "submitted",
+                   -(int(b["id"]))),
+)
+labels = {b["id"]: _selector_label(b) for b in sorted_bookings}
 selected_id = st.selectbox(
     "Select booking",
     options=list(labels.keys()),
@@ -126,19 +141,23 @@ with st.container(border=True):
         unsafe_allow_html=True,
     )
 
-    if booking["customer_email"]:
+    if booking.get("customer_email"):
         st.caption(f"Email: {booking['customer_email']}")
-    if booking["notes"]:
+    if booking.get("notes"):
         st.info(f"**Customer notes:** {booking['notes']}")
 
     docs = list_documents(booking["id"])
     if docs:
         st.markdown(
-            "<div class='c2s-cat' style='margin-top:0.8rem;'>Attached documents</div>",
+            "<div class='c2s-cat' style='margin-top:0.8rem;'>"
+            "Attached documents</div>",
             unsafe_allow_html=True,
         )
         for d in docs:
-            st.write(f"— {d['file_name']}  _({d['size_bytes']:,} bytes)_  → `{d['file_path']}`")
+            st.write(
+                f"— {d['file_name']}  _({d['size_bytes']:,} bytes)_  "
+                f"→ `{d['file_path']}`"
+            )
 
     st.markdown("<hr class='c2s-rule' style='margin:1.6rem 0 1rem;'/>",
                 unsafe_allow_html=True)
@@ -162,7 +181,24 @@ with st.container(border=True):
                             if status == "Ready" and not is_current
                             else "secondary")):
             update_booking_status(booking["id"], status)
-            st.success(f"Status updated to **{status}**.")
+            # Fire a WhatsApp notification (best-effort, never blocks).
+            sent = False
+            try:
+                sent = notify_status_change(
+                    phone=booking["customer_phone"],
+                    token=booking["token"],
+                    status=status,
+                )
+            except Exception:
+                pass  # already logged inside notify_status_change
+
+            msg = f"Status updated to **{status}**."
+            if sent:
+                msg += " WhatsApp alert sent to customer."
+            elif status in ("In Progress", "Ready", "Delivered", "Cancelled"):
+                msg += (" (WhatsApp alert was not sent — see secrets / "
+                        "CallMeBot setup.)")
+            st.success(msg)
             st.rerun()
 
     st.markdown("<hr class='c2s-rule' style='margin:1.6rem 0 1rem;'/>",
@@ -171,13 +207,13 @@ with st.container(border=True):
         f"<div style='display:flex; align-items:center; "
         f"justify-content:space-between; margin-bottom:0.8rem;'>"
         f"<span class='c2s-cat' style='margin:0;'>Payment</span>"
-        f"{payment_badge(booking['payment_status'] or 'unpaid')}"
+        f"{payment_badge(booking.get('payment_status') or 'unpaid')}"
         f"</div>",
         unsafe_allow_html=True,
     )
 
-    # If the customer submitted a UTR online, surface it for one-click verify
-    if booking["payment_status"] == "submitted":
+    # If the customer submitted a UTR online, surface it for one-click verify.
+    if booking.get("payment_status") == "submitted":
         st.warning(
             "**Online payment awaiting verification.**  \n"
             f"Customer paid via UPI · UTR  `{booking['payment_ref']}` · "
@@ -204,12 +240,12 @@ with st.container(border=True):
         st.caption(
             "Or override manually below if you collected cash / card directly."
         )
-    elif booking["payment_status"] == "verified":
+    elif booking.get("payment_status") == "verified":
         st.success(
             f"Payment verified · ₹{booking['amount_paid']} via "
             f"{booking['payment_method']}"
             + (f" · UTR `{booking['payment_ref']}`"
-               if booking['payment_ref'] else "")
+               if booking.get('payment_ref') else "")
         )
 
     p1, p2, p3 = st.columns([1.2, 1.2, 1])

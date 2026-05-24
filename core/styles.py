@@ -607,7 +607,7 @@ def status_badge(status: str, *, big: bool = False) -> str:
 
 _PAYMENT_CONFIG = {
     "verified":    ("●", LIME_DEEP, "Payment verified"),
-    "submitted":   ("○", LIME_DEEP, "Awaiting verification"),
+    "submitted":   ("○", "#D4A017", "Awaiting verification"),
     "rejected":    ("×", "#B85C5C", "Payment rejected"),
     "unpaid":      ("○", MUTED,     "Unpaid"),
 }
@@ -618,6 +618,18 @@ def payment_badge(payment_status: str) -> str:
     glyph, color, label = _PAYMENT_CONFIG.get(
         payment_status or "unpaid", ("●", INK, payment_status or "")
     )
+    # 'submitted' gets a stronger amber treatment so it stands out in the
+    # owner queue as something that needs action.
+    if payment_status == "submitted":
+        return (
+            f'<span style="display:inline-flex; align-items:center; '
+            f'gap:0.45rem; padding:0.25rem 0.65rem; '
+            f'background:#FFF4D4; border:1px solid #D4A017; '
+            f'font-size:0.85rem; font-weight:700; color:#5C4A0F;">'
+            f'<span style="color:#D4A017; font-size:1.05em; line-height:1;">{glyph}</span>'
+            f'{label}'
+            f'</span>'
+        )
     return (
         f'<span style="display:inline-flex; align-items:center; '
         f'gap:0.4rem; font-size:0.88rem; font-weight:600; color:{INK};">'

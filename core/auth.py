@@ -1,66 +1,81 @@
-"""Owner authentication using SHA-256 password hashing.
+"""Owner authentication using bcrypt.
 
-For an MVP this is sufficient: there is one shop owner per deployment, the DB
-file is local, and the cost of compromise is bounded. For multi-staff or
-public hosting, swap in `bcrypt` or `argon2-cffi`.
+bcrypt is a slow, salt-baked, intentionally-expensive password hash.
+It is the right default for password storage today: each call to
+``hashpw`` generates a fresh salt and runs the work-factor-tunable
+Blowfish-derived key schedule, so a stolen DB does not let an attacker
+mount fast offline brute-force attacks.
+
+Backwards compatibility: stored hashes that begin with ``$2`` are bcrypt;
+anything else is treated as legacy and rejected. The default admin user
+is reseeded with a bcrypt hash on first run.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
-import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
-from .db import get_conn
+import bcrypt
+
+from .db import get_supabase
 
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "click2serve123"  # change after first login
 
-
-def _hash_password(password: str, salt: str) -> str:
-    """Salted SHA-256 — `salt$hash` so we can verify later."""
-    digest = hashlib.sha256(f"{salt}{password}".encode("utf-8")).hexdigest()
-    return f"{salt}${digest}"
+# Work factor — 12 is the modern default. Higher = slower = more secure
+# but also slower for legitimate users. 12 ≈ ~250 ms on a typical CPU.
+_BCRYPT_ROUNDS = 12
 
 
 def hash_password(password: str) -> str:
-    return _hash_password(password, secrets.token_hex(8))
+    """Return a fresh bcrypt hash for ``password`` (UTF-8 safe)."""
+    salt = bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
 def verify_password(password: str, stored: str) -> bool:
-    if not stored or "$" not in stored:
+    """Constant-time check against a stored bcrypt hash."""
+    if not stored or not stored.startswith("$2"):
         return False
-    salt, _ = stored.split("$", 1)
-    expected = _hash_password(password, salt)
-    return hmac.compare_digest(expected, stored)
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
 
 
 def authenticate(username: str, password: str) -> bool:
-    """Return True if the credentials match an existing user."""
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT password_hash FROM users WHERE username = ?",
-            (username.strip().lower(),),
-        ).fetchone()
-    if not row:
+    """Return True if the credentials match an existing user row."""
+    sb = get_supabase()
+    res = (
+        sb.table("users")
+        .select("password_hash")
+        .eq("username", username.strip().lower())
+        .limit(1)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
         return False
-    return verify_password(password, row["password_hash"])
+    return verify_password(password, rows[0]["password_hash"])
 
 
 def change_password(username: str, new_password: str) -> bool:
-    with get_conn() as conn:
-        cur = conn.execute(
-            "UPDATE users SET password_hash = ? WHERE username = ?",
-            (hash_password(new_password), username.strip().lower()),
-        )
-        return cur.rowcount > 0
+    sb = get_supabase()
+    res = (
+        sb.table("users")
+        .update({"password_hash": hash_password(new_password)})
+        .eq("username", username.strip().lower())
+        .execute()
+    )
+    return bool(res.data)
 
 
 def create_user(username: str, password: str, role: str = "owner") -> None:
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (username.strip().lower(), hash_password(password), role, now),
-        )
+    sb = get_supabase()
+    sb.table("users").insert(
+        {
+            "username": username.strip().lower(),
+            "password_hash": hash_password(password),
+            "role": role,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).execute()
