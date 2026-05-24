@@ -90,7 +90,7 @@ def list_services(active_only: bool = True) -> list[dict[str, Any]]:
     q = sb.table("services").select("*")
     if active_only:
         q = q.eq("active", True)
-    res = q.order("category").execute()
+    res = q.execute()
     return res.data or []
 
 
