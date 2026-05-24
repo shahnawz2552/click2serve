@@ -36,10 +36,10 @@ PAYMENT_METHODS = ["Unpaid", "Cash", "UPI", "Card"]
 @st.cache_resource(show_spinner=False)
 def get_supabase() -> Client:
     """Return a cached Supabase client built from Streamlit secrets."""
-    url= st.secrets("SUPABASE_URL")
+    url= st.secrets["SUPABASE_URL"]
     #url = (cfg.get("url") or "").strip()
     #key = (cfg.get("key") or cfg.get("anon_key") or "").strip()
-    key = st.secrets("SUPABASE_KEY")
+    key = st.secrets["SUPABASE_KEY"]
     return create_client(url, key)
 
 def _bucket() -> str:
