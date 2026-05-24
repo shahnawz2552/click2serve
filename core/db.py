@@ -36,17 +36,11 @@ PAYMENT_METHODS = ["Unpaid", "Cash", "UPI", "Card"]
 @st.cache_resource(show_spinner=False)
 def get_supabase() -> Client:
     """Return a cached Supabase client built from Streamlit secrets."""
-    cfg = st.secrets.get("supabase", {}) if hasattr(st, "secrets") else {}
-    url = (cfg.get("url") or "").strip()
-    key = (cfg.get("key") or cfg.get("anon_key") or "").strip()
-    if not url or not key:
-        raise RuntimeError(
-            "Supabase credentials missing. Add a [supabase] section with "
-            "`url` and `key` to .streamlit/secrets.toml — see "
-            ".streamlit/secrets.toml.example for the template."
-        )
+    url= st.secrets("SUPABASE_URL")
+    #url = (cfg.get("url") or "").strip()
+    #key = (cfg.get("key") or cfg.get("anon_key") or "").strip()
+    key = st.secrets("SUPABASE_KEY")
     return create_client(url, key)
-
 
 def _bucket() -> str:
     cfg = st.secrets.get("supabase", {}) if hasattr(st, "secrets") else {}
