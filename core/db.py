@@ -185,7 +185,6 @@ def create_booking(
         "notes": (notes or "").strip() or None,
         "status": "Pending",
         "payment_method": "Unpaid",
-        "payment_status": "unpaid",
         "amount_paid": 0,
         "created_at": now,
         "updated_at": now,
