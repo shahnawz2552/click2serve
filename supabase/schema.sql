@@ -76,6 +76,7 @@ create table if not exists shop_config (
     upi_vpa         text not null default '',
     upi_payee_name  text not null default '',
     opening_hours   text not null default '',
+    whatsapp_enabled boolean not null default true,
     updated_at      timestamptz not null default now()
 );
 
@@ -102,6 +103,7 @@ alter table shop_config add column if not exists address        text not null de
 alter table shop_config add column if not exists upi_vpa        text not null default '';
 alter table shop_config add column if not exists upi_payee_name text not null default '';
 alter table shop_config add column if not exists opening_hours  text not null default '';
+alter table shop_config add column if not exists whatsapp_enabled boolean not null default true;
 alter table shop_config add column if not exists updated_at     timestamptz not null default now();
 
 -- services: requirements + active flag may pre-date some installations
