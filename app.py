@@ -91,6 +91,8 @@ def build_nav() -> dict[str, list[st.Page]]:
                 icon=":material/payments:"),
         st.Page("pages/track.py", title="Track booking",
                 icon=":material/search:"),
+        st.Page("pages/contact.py", title="Contact us",
+                icon=":material/call:"),
     ]
 
     pages: dict[str, list[st.Page]] = {"Customer": customer_pages}
