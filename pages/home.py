@@ -1,57 +1,47 @@
-"""Customer landing page — hero, trust badges, service grid."""
+"""Customer landing page — gradient hero, animated stats, vibrant grid."""
 from __future__ import annotations
 
 import streamlit as st
 
 from core.db import list_categories, list_services
 from core.styles import (
-    BORDER, INK, MUTED, PRIMARY, SURFACE, category_badge,
-    inject_global_css, trust_badge,
+    BORDER, INK, MUTED, PRIMARY, SURFACE, category_accent, category_badge,
+    hero_block, inject_global_css, trust_badge,
 )
 
 inject_global_css()
 
 
+# Pull data first so the hero stats can be live, not hardcoded.
+all_services = list_services(active_only=True)
+all_categories = list_categories()
+service_count = max(len(all_services), 12)
+
+# Average ETA across active services — reads as a credible "how fast" pill.
+etas = [int(s.get("eta_hours") or 24) for s in all_services]
+avg_eta = int(round(sum(etas) / len(etas))) if etas else 24
+
+
 # ── Hero ────────────────────────────────────────────────────────────────────
-st.markdown(
-    f"""
-    <div style="text-align:center; padding:1.4rem 0 0.8rem;">
-        <div style="font-size:3rem; line-height:1;">🛎️</div>
-        <h1 style="font-size:2rem !important; font-weight:800 !important;
-                   margin:0.6rem 0 0.3rem !important; color:{INK} !important;
-                   letter-spacing:-0.02em;">
-            Click2Serve
-        </h1>
-        <p style="color:{MUTED}; font-size:0.95rem; margin:0;">
-            Fast · Reliable · Digital Services
-        </p>
-    </div>
-    <hr style="border:none; border-top:1px solid {BORDER};
-               margin:1rem 0 1.2rem;"/>
-    """,
-    unsafe_allow_html=True,
+hero_block(
+    eyebrow="Live now · Bharatpur",
+    plain_lead="Govt paperwork,",
+    accent_word="done in hours.",
+    plain_tail="",
+    subtitle=(
+        "Aadhaar, passport, driving licence, electricity bills — drop your "
+        "request in 60 seconds and we'll handle the queue for you. Pay "
+        "online, track everything by SMS-style updates."
+    ),
+    stats=[
+        (f"{service_count}+", "Services"),
+        (f"~{avg_eta}h", "Avg turnaround"),
+        ("UPI", "Pay online"),
+    ],
 )
 
 
-# ── Trust badges ────────────────────────────────────────────────────────────
-all_services = list_services(active_only=True)
-all_categories = list_categories()
-
-t1, t2, t3 = st.columns(3, gap="small")
-with t1:
-    st.markdown(trust_badge("🔒", "Secure"), unsafe_allow_html=True)
-with t2:
-    st.markdown(
-        trust_badge("📋", f"{max(len(all_services), 12)}+ Services"),
-        unsafe_allow_html=True,
-    )
-with t3:
-    st.markdown(trust_badge("⚡", "Same Day"), unsafe_allow_html=True)
-
-
-# ── Above-the-fold owner link ───────────────────────────────────────────────
-# Tiny, top-right link so shop owners can always find sign-in immediately on
-# landing — no sidebar required, no scrolling required. Customers can ignore.
+# ── Above-the-fold owner link (kept compact, top-right) ───────────────────
 if not st.session_state.get("logged_in"):
     _, owner_col = st.columns([5, 1])
     with owner_col:
@@ -66,11 +56,26 @@ if not st.session_state.get("logged_in"):
             st.rerun()
 
 
+# ── Trust badges ────────────────────────────────────────────────────────────
+t1, t2, t3 = st.columns(3, gap="small")
+with t1:
+    st.markdown(trust_badge("🔒", "Secure"), unsafe_allow_html=True)
+with t2:
+    st.markdown(
+        trust_badge("📋", f"{service_count}+ Services"),
+        unsafe_allow_html=True,
+    )
+with t3:
+    st.markdown(trust_badge("⚡", "Same Day"), unsafe_allow_html=True)
+
+
 # ── Filter row ──────────────────────────────────────────────────────────────
 st.markdown(
-    "<div style='height:1.2rem;'></div>"
-    f"<h2 style='font-size:1.05rem !important; font-weight:700 !important; "
-    f"margin:0 0 0.6rem !important;'>Browse services</h2>",
+    "<div style='height:1.6rem;'></div>"
+    "<div class='c2s-eyebrow'>Catalog</div>"
+    f"<h2 style='font-size:1.35rem !important; font-weight:800 !important; "
+    f"letter-spacing:-0.02em; margin:0 0 0.8rem !important; color:{INK} "
+    f"!important;'>Browse our services.</h2>",
     unsafe_allow_html=True,
 )
 
@@ -116,15 +121,21 @@ else:
         cols = st.columns(3, gap="small")
         for col, svc in zip(cols, services[i:i + 3]):
             total = (svc["govt_fee"] or 0) + (svc["service_charge"] or 0)
+            accent = category_accent(svc["category"])
             with col:
                 with st.container(border=True):
+                    # Category-tinted accent stripe at the top
                     st.markdown(
+                        f'<div style="height:3px; background:{accent}; '
+                        f'margin:-1.05rem -1.05rem 0.9rem; '
+                        f'border-top-left-radius:14px; '
+                        f'border-top-right-radius:14px;"></div>'
                         f'<div style="display:flex; align-items:center; '
                         f'justify-content:space-between; gap:0.6rem; '
                         f'margin-bottom:0.5rem;">'
                         f'{category_badge(svc["category"])}'
                         f'<span style="color:{MUTED}; font-size:0.8rem; '
-                        f'font-weight:500;">⏱️ {svc["eta_hours"]}h</span>'
+                        f'font-weight:500;">⏱ {svc["eta_hours"]}h</span>'
                         f'</div>'
                         f'<div style="font-size:1rem; font-weight:700; '
                         f'color:{INK}; line-height:1.3; '
@@ -180,11 +191,6 @@ if not st.session_state.get("logged_in"):
             use_container_width=True,
             help="Shop owners and staff: click to sign in.",
         ):
-            # Same pending-switch handshake as the sidebar button in app.py:
-            # we can't switch directly to login.py because it isn't in the
-            # current st.navigation (we are about to add it). Set the flag
-            # and rerun — app.py's pending-switch handler will take over and
-            # call st.switch_page once the nav has been rebuilt.
             st.session_state["show_owner_login"] = True
             st.session_state["_pending_page_switch"] = "login"
             st.rerun()
