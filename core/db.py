@@ -452,7 +452,22 @@ def update_shop_config(**fields: Any) -> None:
         return
     clean["updated_at"] = _now_iso()
     sb = get_supabase()
-    sb.table("shop_config").update(clean).eq("id", 1).execute()
+    try:
+        sb.table("shop_config").update(clean).eq("id", 1).execute()
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        # PostgREST returns PGRST204 when the schema cache doesn't know the
+        # column. This means the live DB is missing a column the code
+        # expects — re-run supabase/schema.sql to add it.
+        if "PGRST204" in msg or "schema cache" in msg:
+            raise RuntimeError(
+                "Your Supabase database is missing a column this app "
+                "needs. Open the Supabase SQL editor and re-run "
+                "`supabase/schema.sql` from the repo — it is idempotent "
+                "and will safely add any missing columns. Original "
+                "error: " + msg
+            ) from exc
+        raise
 
 
 # ──────────────────────────────────────────────────────────────────────────────
