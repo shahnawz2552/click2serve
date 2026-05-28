@@ -50,26 +50,47 @@ if start > end:
 
 st.caption(f"Showing data from **{start}** to **{end}**.")
 
-summary = revenue_summary(start, end)
+summary = revenue_summary(start, end) or {}
+
+
+def _i(d: dict, key: str, default: int = 0) -> int:
+    """Read an int from a possibly-sparse dict, treating None as 0."""
+    val = d.get(key) if isinstance(d, dict) else None
+    try:
+        return int(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
+
 
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("Total bookings", f"{summary['total_bookings']}")
-m2.metric("Revenue collected", f"₹{summary['revenue']:,}")
-m3.metric("Delivered", f"{summary['delivered']}")
-m4.metric("Unpaid", f"{summary['unpaid']}",
-          help="Bookings without a recorded payment yet.")
+m1.metric("Total bookings", f"{_i(summary, 'total_bookings')}")
+m2.metric("Revenue collected", f"₹{_i(summary, 'revenue'):,}")
+m3.metric("Delivered", f"{_i(summary, 'delivered')}")
+m4.metric(
+    "Unpaid",
+    f"{_i(summary, 'unpaid')}",
+    help="Bookings without a recorded payment yet.",
+)
 
 st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
 
 # Daily trend
-daily = revenue_by_day(start, end)
+daily = revenue_by_day(start, end) or []
 df_daily = pd.DataFrame([dict(r) for r in daily])
 
-if df_daily.empty:
+if df_daily.empty or "day" not in df_daily.columns:
     st.info("No bookings in this range.")
 else:
-    df_daily["day"] = pd.to_datetime(df_daily["day"])
-    df_daily = df_daily.set_index("day").sort_index()
+    # Backfill any missing numeric columns so st.bar_chart doesn't crash.
+    for col, default in (("revenue", 0), ("bookings", 0)):
+        if col not in df_daily.columns:
+            df_daily[col] = default
+        df_daily[col] = pd.to_numeric(
+            df_daily[col], errors="coerce"
+        ).fillna(default).astype(int)
+
+    df_daily["day"] = pd.to_datetime(df_daily["day"], errors="coerce")
+    df_daily = df_daily.dropna(subset=["day"]).set_index("day").sort_index()
 
     st.markdown(
         "<div class='c2s-cat'>Daily revenue</div>"
@@ -93,12 +114,19 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-by_service = revenue_by_service(start, end)
+by_service = revenue_by_service(start, end) or []
 df_svc = pd.DataFrame([dict(r) for r in by_service])
 
 if df_svc.empty:
     st.caption("No service data for this period.")
 else:
+    # Ensure expected columns exist before renaming.
+    for col, default in (("service_name", "(unknown)"),
+                         ("bookings", 0),
+                         ("revenue", 0)):
+        if col not in df_svc.columns:
+            df_svc[col] = default
+
     df_svc = df_svc.rename(columns={
         "service_name": "Service",
         "bookings": "Bookings",

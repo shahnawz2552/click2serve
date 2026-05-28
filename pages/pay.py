@@ -94,18 +94,20 @@ with st.container(border=True):
     )
 
 # ── Check shop UPI is configured ────────────────────────────────────────────
-shop = get_shop_config()
-shop_vpa = (shop["upi_vpa"] or "").strip()
-shop_payee_name = (shop["upi_payee_name"]
-                   or shop["shop_name"] or "Click2Serve").strip()
+shop = get_shop_config() or {}
+shop_vpa = (shop.get("upi_vpa") or "").strip()
+shop_payee_name = (
+    shop.get("upi_payee_name") or shop.get("shop_name") or "Click2Serve"
+).strip()
 
 if not is_valid_vpa(shop_vpa):
     st.error(
         "Online payment is not yet configured by the shop owner. "
         "Please pay in cash at the shop, or contact the owner for their UPI ID."
     )
-    if shop["owner_phone"]:
-        st.info(f"Shop owner: {shop['owner_phone']}")
+    owner_phone = (shop.get("owner_phone") or "").strip()
+    if owner_phone:
+        st.info(f"Shop owner: {owner_phone}")
     st.stop()
 
 # ── Build UPI deep link + QR ────────────────────────────────────────────────

@@ -1,8 +1,9 @@
 """Click2Serve — main entry point.
 
 Customers see only customer-facing pages. The owner login is hidden behind
-a special URL — visit ``?owner=1`` to reveal it. Once logged in, owner
-pages are shown; on logout they disappear again.
+a discreet "Owner" button at the bottom of the sidebar — clicking it
+reveals the owner login page. Once logged in, owner pages are shown; on
+logout they disappear again.
 
 Sidebar starts collapsed so the home page lands cleanly on mobile.
 """
@@ -36,20 +37,15 @@ inject_global_css()
 
 
 def _owner_route_visible() -> bool:
-    """Owner login is shown only when the URL contains the magic flag.
+    """Return True when the owner section should appear in the sidebar.
 
-    Once an owner is signed in, we keep the owner pages visible for the
-    duration of the session — even if they navigate away from the magic
-    URL.
+    True if the user is already signed in, or if they've clicked the
+    discreet "Owner" button at the bottom of the sidebar (which sets
+    ``show_owner_login`` in session state).
     """
     if st.session_state.get("logged_in"):
         return True
-    raw = st.query_params.get("owner")
-    if raw is None:
-        return False
-    if isinstance(raw, list):
-        raw = raw[0] if raw else ""
-    return str(raw).lower() not in ("0", "false", "no")
+    return bool(st.session_state.get("show_owner_login"))
 
 
 # ── Sidebar branding (white, no gradient) ──────────────────────────────────
@@ -84,7 +80,7 @@ with st.sidebar:
     )
 
 
-# ── Dynamic navigation based on auth + URL state ──────────────────────────
+# ── Dynamic navigation based on auth + sidebar state ──────────────────────
 def build_nav() -> dict[str, list[st.Page]]:
     customer_pages = [
         st.Page("pages/home.py", title="Home",
@@ -124,4 +120,52 @@ def build_nav() -> dict[str, list[st.Page]]:
 
 
 nav = st.navigation(build_nav())
+
+
+# ── Discreet "Owner" button at the bottom of the sidebar ──────────────────
+# Streamlit renders sidebar widgets in code order, so anything appended to
+# the sidebar after st.navigation(...) appears below the nav links.
+with st.sidebar:
+    # Spacer pushes the button toward the bottom of the sidebar on tall
+    # screens without forcing it off-screen on short ones.
+    st.markdown(
+        "<div style='height: 1.4rem;'></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<div style='border-top: 1px solid {BORDER}; "
+        f"margin: 0 -0.25rem 0.6rem;'></div>",
+        unsafe_allow_html=True,
+    )
+
+    if not st.session_state.get("logged_in"):
+        if st.session_state.get("show_owner_login"):
+            # Already revealed — let the user dismiss the login form.
+            if st.button(
+                "Hide owner login",
+                key="hide_owner_btn",
+                use_container_width=True,
+                help="Go back to the customer-only view.",
+            ):
+                st.session_state.pop("show_owner_login", None)
+                st.rerun()
+        else:
+            # Discreet, link-styled trigger so it doesn't fight for
+            # attention with the customer nav above.
+            if st.button(
+                "Owner",
+                key="reveal_owner_btn",
+                use_container_width=True,
+                help="Shop owners and staff: click to sign in.",
+            ):
+                st.session_state["show_owner_login"] = True
+                st.rerun()
+
+        st.markdown(
+            f"<div style='color:{MUTED}; font-size:0.72rem; text-align:center; "
+            f"margin-top:0.4rem;'>Customers don't need to sign in.</div>",
+            unsafe_allow_html=True,
+        )
+
+
 nav.run()

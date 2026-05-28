@@ -52,23 +52,23 @@ if pending_verif:
 
 
 # ── KPI cards (4 columns) ───────────────────────────────────────────────────
-kpis = today_kpis()
+kpis = today_kpis() or {}
 
 m1, m2, m3, m4 = st.columns(4, gap="small")
 m1.markdown(
-    kpi_card("📥", str(kpis["total"]), "Today's bookings", PRIMARY),
+    kpi_card("📥", str(kpis.get("total", 0)), "Today's bookings", PRIMARY),
     unsafe_allow_html=True,
 )
 m2.markdown(
-    kpi_card("⏳", str(kpis["pending"]), "Pending", WARNING),
+    kpi_card("⏳", str(kpis.get("pending", 0)), "Pending", WARNING),
     unsafe_allow_html=True,
 )
 m3.markdown(
-    kpi_card("💰", f"₹{kpis['revenue']:,}", "Revenue today", SUCCESS),
+    kpi_card("💰", f"₹{kpis.get('revenue', 0):,}", "Revenue today", SUCCESS),
     unsafe_allow_html=True,
 )
 m4.markdown(
-    kpi_card("✅", str(kpis["delivered"]), "Total delivered", "#0F766E"),
+    kpi_card("✅", str(kpis.get("delivered", 0)), "Total delivered", "#0F766E"),
     unsafe_allow_html=True,
 )
 
@@ -119,16 +119,45 @@ with st.container(border=True):
 
 # ── Change password (advanced, in expander) ─────────────────────────────────
 with st.expander("Change owner password"):
-    with st.form("pwd_form"):
-        new_pw = st.text_input("New password", type="password",
-                               help="At least 6 characters.")
-        confirm = st.text_input("Confirm new password", type="password")
-        save = st.form_submit_button("Update password", type="primary")
+    with st.form("pwd_form", clear_on_submit=True):
+        new_pw = st.text_input(
+            "New password",
+            type="password",
+            help="At least 6 characters.",
+            key="pwd_new",
+        )
+        confirm = st.text_input(
+            "Confirm new password",
+            type="password",
+            key="pwd_confirm",
+        )
+        save = st.form_submit_button(
+            "Update password",
+            type="primary",
+            use_container_width=True,
+        )
+
     if save:
-        if len(new_pw) < 6:
+        username = (st.session_state.get("username") or "").strip()
+        if not username:
+            st.error("No active session. Please sign out and sign in again.")
+        elif not new_pw or len(new_pw) < 6:
             st.error("Password must be at least 6 characters.")
         elif new_pw != confirm:
             st.error("Passwords do not match.")
         else:
-            change_password(st.session_state["username"], new_pw)
-            st.success("Password updated. Please sign in again next time.")
+            try:
+                ok = change_password(username, new_pw)
+            except Exception as exc:  # noqa: BLE001 — show DB errors to user
+                st.error(f"Could not update password: {exc}")
+            else:
+                if ok:
+                    st.success(
+                        "Password updated. Use the new password the next "
+                        "time you sign in."
+                    )
+                else:
+                    st.error(
+                        "We couldn't find your account to update. "
+                        "Please sign out and sign in again."
+                    )

@@ -7,7 +7,7 @@ from core.styles import inject_global_css, section_header
 
 inject_global_css()
 
-for key in ("logged_in", "username", "remember_login"):
+for key in ("logged_in", "username", "remember_login", "show_owner_login"):
     st.session_state.pop(key, None)
 
 section_header(

@@ -21,7 +21,18 @@ section_header(
     subtitle="Configure your shop info and the UPI ID that customers will pay to.",
 )
 
-shop = get_shop_config()
+# ── Load current shop config (defensive — never assume a key exists) ────────
+# Older shop_config rows can be missing freshly-added columns. Treat the row
+# as a sparse dict and pull values via .get(...) so a missing column never
+# crashes the page mid-form (which would also swallow the submit button and
+# trigger Streamlit's "missing submit button" error).
+shop = get_shop_config() or {}
+
+
+def _shop_val(key: str, default: str = "") -> str:
+    """Read a string field from shop config, treating None as empty."""
+    return (shop.get(key) or default) or ""
+
 
 st.markdown(
     "<div class='c2s-cat'>Section 01</div>"
@@ -30,34 +41,51 @@ st.markdown(
 )
 with st.form("shop_info"):
     c1, c2 = st.columns(2)
-    shop_name = c1.text_input("Shop name", value=shop["shop_name"] or "Click2Serve")
-    owner_name = c2.text_input("Owner name", value=shop["owner_name"] or "")
+    shop_name = c1.text_input(
+        "Shop name",
+        value=_shop_val("shop_name", "Click2Serve"),
+    )
+    owner_name = c2.text_input(
+        "Owner name",
+        value=_shop_val("owner_name"),
+    )
 
     c3, c4 = st.columns(2)
-    owner_phone = c3.text_input("Contact number",
-                                value=shop["owner_phone"] or "",
-                                placeholder="10-digit mobile")
-    opening_hours = c4.text_input("Opening hours",
-                                  value=shop["opening_hours"] or "",
-                                  placeholder="e.g. 9:00 AM – 9:00 PM")
+    owner_phone = c3.text_input(
+        "Contact number",
+        value=_shop_val("owner_phone"),
+        placeholder="10-digit mobile",
+    )
+    opening_hours = c4.text_input(
+        "Opening hours",
+        value=_shop_val("opening_hours"),
+        placeholder="e.g. 9:00 AM – 9:00 PM",
+    )
 
     address = st.text_area(
         "Shop address",
-        value=shop["address"] or "", height=80,
+        value=_shop_val("address"),
+        height=80,
         placeholder="Full address shown to customers on their receipt.",
     )
 
-    save_info = st.form_submit_button("Save shop info →", type="primary",
-                                      use_container_width=True)
+    save_info = st.form_submit_button(
+        "Save shop info →",
+        type="primary",
+        use_container_width=True,
+    )
 
 if save_info:
-    update_shop_config(
-        shop_name=shop_name, owner_name=owner_name,
-        owner_phone=owner_phone, opening_hours=opening_hours,
-        address=address,
-    )
-    st.success("Shop information updated.")
-    st.rerun()
+    try:
+        update_shop_config(
+            shop_name=shop_name, owner_name=owner_name,
+            owner_phone=owner_phone, opening_hours=opening_hours,
+            address=address,
+        )
+        st.success("Shop information updated.")
+        st.rerun()
+    except Exception as exc:  # noqa: BLE001 — surface DB errors to the user
+        st.error(f"Could not save shop info: {exc}")
 
 st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
 st.markdown(
@@ -70,8 +98,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-current_vpa = shop["upi_vpa"] or ""
-current_payee = shop["upi_payee_name"] or shop["shop_name"] or ""
+current_vpa = _shop_val("upi_vpa")
+current_payee = _shop_val("upi_payee_name") or _shop_val("shop_name")
 
 if current_vpa and is_valid_vpa(current_vpa):
     st.success(
@@ -98,8 +126,11 @@ with st.form("upi_form"):
         value=current_payee,
         placeholder="e.g. Click2Serve Bharatpur",
     )
-    save_upi = st.form_submit_button("Save UPI settings →", type="primary",
-                                     use_container_width=True)
+    save_upi = st.form_submit_button(
+        "Save UPI settings →",
+        type="primary",
+        use_container_width=True,
+    )
 
 if save_upi:
     if upi_vpa and not is_valid_vpa(upi_vpa):
@@ -108,9 +139,12 @@ if save_upi:
             "It must be in the format `name@bank`, e.g. `yourname@okaxis`."
         )
     else:
-        update_shop_config(upi_vpa=upi_vpa, upi_payee_name=upi_payee_name)
-        st.success("UPI settings saved. The customer pay page is now live.")
-        st.rerun()
+        try:
+            update_shop_config(upi_vpa=upi_vpa, upi_payee_name=upi_payee_name)
+            st.success("UPI settings saved. The customer pay page is now live.")
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not save UPI settings: {exc}")
 
 st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
 with st.expander("Want auto-reconciled payments? (Razorpay roadmap)"):
