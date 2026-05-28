@@ -148,12 +148,15 @@ else:
 # ── Footer CTA ──────────────────────────────────────────────────────────────
 st.markdown("<div style='height:1.6rem;'></div>", unsafe_allow_html=True)
 
-ft1, ft2 = st.columns(2)
+ft1, ft2, ft3 = st.columns(3)
 with ft1:
     st.page_link("pages/track.py", label="Track booking",
                  use_container_width=True)
 with ft2:
     st.page_link("pages/pay.py", label="Pay online",
+                 use_container_width=True)
+with ft3:
+    st.page_link("pages/contact.py", label="Contact us",
                  use_container_width=True)
 
 
