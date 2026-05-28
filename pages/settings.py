@@ -4,6 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from core.db import get_shop_config, update_shop_config
+from core.notifications import is_api_key_configured, send_test_message
 from core.payments import is_valid_vpa
 from core.styles import inject_global_css, section_header
 
@@ -145,6 +146,95 @@ if save_upi:
             st.rerun()
         except Exception as exc:  # noqa: BLE001
             st.error(f"Could not save UPI settings: {exc}")
+
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat'>Section 03</div>"
+    "<h3 style='margin:0 0 0.5rem;'>Customer notifications — WhatsApp.</h3>"
+    "<p style='color:#5A6157; margin:0 0 1rem;'>"
+    "When enabled, customers receive a WhatsApp message at every major "
+    "status change (In Progress, Ready, Delivered, Cancelled). Powered "
+    "by the free CallMeBot API."
+    "</p>",
+    unsafe_allow_html=True,
+)
+
+# Status indicator: is the CallMeBot api_key configured?
+api_key_ok = is_api_key_configured()
+if api_key_ok:
+    st.success(
+        "CallMeBot API key is **configured** in `secrets.toml`. "
+        "Notifications can be sent."
+    )
+else:
+    st.warning(
+        "CallMeBot API key is **not configured**. Even if you enable the "
+        "toggle below, no messages will go out until you add "
+        "`[callmebot]\\napi_key = \"...\"` to your Streamlit secrets. "
+        "Get a free key at "
+        "https://www.callmebot.com/blog/free-api-whatsapp-messages/"
+    )
+
+# Default the toggle to True (matches old always-on behaviour) when the
+# field is missing from a stale shop_config row.
+notif_default = shop.get("whatsapp_enabled")
+if notif_default is None:
+    notif_default = True
+
+with st.form("notifications_form"):
+    whatsapp_enabled = st.checkbox(
+        "Send WhatsApp notifications to customers on status changes",
+        value=bool(notif_default),
+        help=(
+            "Disable this if you'd rather message customers manually, or "
+            "while you finish CallMeBot setup. Per-status messages still "
+            "log internally; only the outbound HTTP call is suppressed."
+        ),
+    )
+    save_notif = st.form_submit_button(
+        "Save notification settings →",
+        type="primary",
+        use_container_width=True,
+    )
+
+if save_notif:
+    try:
+        update_shop_config(whatsapp_enabled=bool(whatsapp_enabled))
+        st.success(
+            "Notification settings saved. "
+            + ("Customers will be alerted on status changes."
+               if whatsapp_enabled
+               else "Outbound WhatsApp alerts are now off.")
+        )
+        st.rerun()
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Could not save notification settings: {exc}")
+
+# Test-message helper — bypasses the toggle so you can verify your
+# CallMeBot setup before flipping the switch on.
+with st.expander("Send a test message"):
+    st.caption(
+        "Sends a single 'this is a test' message to the number you enter, "
+        "ignoring the toggle above. Useful for verifying that the receiving "
+        "phone has activated CallMeBot."
+    )
+    test_phone = st.text_input(
+        "Phone number to test",
+        value=_shop_val("owner_phone"),
+        max_chars=15,
+        key="notif_test_phone",
+    )
+    if st.button(
+        "Send test WhatsApp message",
+        key="send_test_btn",
+        use_container_width=True,
+        disabled=not api_key_ok,
+    ):
+        ok, reason = send_test_message(phone=test_phone)
+        if ok:
+            st.success(reason)
+        else:
+            st.error(reason)
 
 st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
 with st.expander("Want auto-reconciled payments? (Razorpay roadmap)"):
