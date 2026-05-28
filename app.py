@@ -121,6 +121,20 @@ def build_nav() -> dict[str, list[st.Page]]:
 
 nav = st.navigation(build_nav())
 
+# ── Pending page-switch handler ───────────────────────────────────────────
+# Some sidebar buttons need to (a) flip a session-state flag and (b) jump
+# straight to a different page once the navigation has been rebuilt to
+# include that page. We can't call st.switch_page in the same run that
+# adds the page to the nav (the nav is locked at the st.navigation(...)
+# call above), so the button stashes the destination in session state and
+# triggers st.rerun(); on the next run, build_nav() now includes the
+# destination page, and we can safely switch to it here.
+_pending_target = st.session_state.pop("_pending_page_switch", None)
+if _pending_target == "login":
+    st.switch_page("pages/login.py")
+elif _pending_target == "home":
+    st.switch_page("pages/home.py")
+
 
 # ── Discreet "Owner" button at the bottom of the sidebar ──────────────────
 # Streamlit renders sidebar widgets in code order, so anything appended to
@@ -148,6 +162,9 @@ with st.sidebar:
                 help="Go back to the customer-only view.",
             ):
                 st.session_state.pop("show_owner_login", None)
+                # Send the user back to home on the next run, after the
+                # Owner section has been removed from the nav.
+                st.session_state["_pending_page_switch"] = "home"
                 st.rerun()
         else:
             # Discreet, link-styled trigger so it doesn't fight for
@@ -159,6 +176,10 @@ with st.sidebar:
                 help="Shop owners and staff: click to sign in.",
             ):
                 st.session_state["show_owner_login"] = True
+                # Jump straight to the login page on the next run, so the
+                # user sees the sign-in form immediately instead of a new
+                # nav entry they then have to click.
+                st.session_state["_pending_page_switch"] = "login"
                 st.rerun()
 
         st.markdown(
