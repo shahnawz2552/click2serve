@@ -49,6 +49,23 @@ with t3:
     st.markdown(trust_badge("⚡", "Same Day"), unsafe_allow_html=True)
 
 
+# ── Above-the-fold owner link ───────────────────────────────────────────────
+# Tiny, top-right link so shop owners can always find sign-in immediately on
+# landing — no sidebar required, no scrolling required. Customers can ignore.
+if not st.session_state.get("logged_in"):
+    _, owner_col = st.columns([5, 1])
+    with owner_col:
+        if st.button(
+            "Owner →",
+            key="home_owner_top_btn",
+            use_container_width=True,
+            help="Shop owners and staff: click to sign in.",
+        ):
+            st.session_state["show_owner_login"] = True
+            st.session_state["_pending_page_switch"] = "login"
+            st.rerun()
+
+
 # ── Filter row ──────────────────────────────────────────────────────────────
 st.markdown(
     "<div style='height:1.2rem;'></div>"
