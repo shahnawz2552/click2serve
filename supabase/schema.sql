@@ -1,11 +1,19 @@
 -- Click2Serve — Supabase schema migration
 --
--- Run this once in: Supabase dashboard → SQL Editor → New query → Run.
+-- Run this in: Supabase dashboard → SQL Editor → New query → Run.
 -- After running, also create a private Storage bucket named
 -- "click2serve-documents" via Supabase dashboard → Storage → New bucket.
 --
--- Idempotent: safe to re-run (uses CREATE TABLE IF NOT EXISTS).
+-- Idempotent: safe to re-run any time.
+--   * CREATE TABLE IF NOT EXISTS  — won't recreate existing tables.
+--   * ALTER TABLE ... ADD COLUMN IF NOT EXISTS — safely adds any columns
+--     that newer versions of the app introduced. Re-run this whole file
+--     after pulling code if you see errors like "Could not find the
+--     '<column>' column of '<table>' in the schema cache (PGRST204)".
 
+-- ─────────────────────────────────────────────────────────────────────────
+-- Tables
+-- ─────────────────────────────────────────────────────────────────────────
 create table if not exists services (
     id           bigserial primary key,
     name         text    not null unique,
@@ -71,10 +79,48 @@ create table if not exists shop_config (
     updated_at      timestamptz not null default now()
 );
 
--- Ensure the singleton config row exists
+-- ─────────────────────────────────────────────────────────────────────────
+-- Column-level migrations (safe to re-run)
+-- ─────────────────────────────────────────────────────────────────────────
+-- Postgres tracks columns independently of CREATE TABLE IF NOT EXISTS, so
+-- newer columns added after the original table was created must be added
+-- explicitly. Each ALTER below uses ADD COLUMN IF NOT EXISTS so it's a
+-- no-op when the column already exists.
+
+-- bookings: payment lifecycle columns added after v0.1
+alter table bookings add column if not exists payment_status text not null default 'unpaid';
+alter table bookings add column if not exists payment_ref    text;
+alter table bookings add column if not exists amount_paid    integer not null default 0;
+alter table bookings add column if not exists customer_email text;
+alter table bookings add column if not exists notes          text;
+
+-- shop_config: UPI fields, address, opening hours, owner info added later
+alter table shop_config add column if not exists shop_name      text not null default 'Click2Serve';
+alter table shop_config add column if not exists owner_name     text not null default '';
+alter table shop_config add column if not exists owner_phone    text not null default '';
+alter table shop_config add column if not exists address        text not null default '';
+alter table shop_config add column if not exists upi_vpa        text not null default '';
+alter table shop_config add column if not exists upi_payee_name text not null default '';
+alter table shop_config add column if not exists opening_hours  text not null default '';
+alter table shop_config add column if not exists updated_at     timestamptz not null default now();
+
+-- services: requirements + active flag may pre-date some installations
+alter table services add column if not exists requirements text    not null default '';
+alter table services add column if not exists active       boolean not null default true;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Singleton config row
+-- ─────────────────────────────────────────────────────────────────────────
 insert into shop_config (id, updated_at)
 values (1, now())
 on conflict (id) do nothing;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Reload PostgREST schema cache so new columns are visible to supabase-py
+-- without waiting for the periodic auto-reload (this is what causes the
+-- PGRST204 "could not find column ... in the schema cache" error).
+-- ─────────────────────────────────────────────────────────────────────────
+notify pgrst, 'reload schema';
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Row Level Security
