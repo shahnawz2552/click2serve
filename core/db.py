@@ -495,7 +495,7 @@ def pending_verification_count() -> int:
     res = (
         sb.table("bookings")
         .select("id", count="exact")
-        .eq("payment_status", "submitted")
+        .eq("payment_method", "UPI")
         .execute()
     )
     return int(res.count or 0)
