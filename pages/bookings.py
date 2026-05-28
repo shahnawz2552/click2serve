@@ -16,7 +16,11 @@ from core.db import (
     reject_payment, update_booking_payment, update_booking_status,
     verify_payment,
 )
-from core.notifications import notify_status_change
+from core.notifications import (
+    customer_status_message,
+    customer_whatsapp_chat_url,
+    notify_status_change,
+)
 from core.styles import (
     inject_global_css, payment_badge, section_header, status_badge,
 )
@@ -234,6 +238,43 @@ with st.container(border=True):
                         "Customer notifications.)")
             st.success(msg)
             st.rerun()
+
+    # ── One-tap "Send WhatsApp to customer" link ───────────────────────
+    # CallMeBot can only deliver to phones that have explicitly opted in,
+    # so we can't auto-push to arbitrary customers. Instead, generate a
+    # wa.me click-to-chat link with the message pre-filled — owner taps
+    # the link, WhatsApp opens, owner taps Send. Zero cost, works for
+    # any customer phone, no API approvals.
+    customer_phone = _g(booking, "customer_phone", "")
+    customer_name = _g(booking, "customer_name", "")
+    if customer_phone:
+        _msg = customer_status_message(
+            status=current_status,
+            token=_g(booking, "token", ""),
+            customer_name=customer_name,
+            service_name=_g(booking, "service_name", "your service"),
+        )
+        _url = customer_whatsapp_chat_url(
+            customer_phone=customer_phone, message=_msg,
+        )
+        if _url:
+            st.markdown(
+                "<div style='height:0.8rem;'></div>"
+                "<div class='c2s-cat'>Notify customer</div>"
+                "<p style='color:#5A6157; font-size:0.85rem; margin:0 0 0.5rem;'>"
+                "Tap below to open WhatsApp on your device with this "
+                "message pre-filled — you only have to press Send."
+                "</p>",
+                unsafe_allow_html=True,
+            )
+            label = (
+                f"📲 Send WhatsApp to "
+                f"{(customer_name.split()[0] if customer_name else 'customer')} "
+                f"({customer_phone}) →"
+            )
+            st.link_button(label, _url, use_container_width=True)
+            with st.expander("Preview / copy the message"):
+                st.code(_msg, language=None)
 
     st.markdown("<hr class='c2s-rule' style='margin:1.6rem 0 1rem;'/>",
                 unsafe_allow_html=True)

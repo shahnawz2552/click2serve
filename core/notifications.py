@@ -1,19 +1,25 @@
-"""WhatsApp notifications via the CallMeBot free API.
+"""WhatsApp notifications — owner alerts (auto) + customer click-to-chat.
 
 Why CallMeBot?
-    Zero approval, no business KYC, just a free GET endpoint. Perfect for
-    an MVP. The catch: each phone that wants to RECEIVE messages must first
-    send "I allow callmebot to send me messages" to CallMeBot's WhatsApp
+    Zero approval, no business KYC, just a free GET endpoint. The catch:
+    each phone that wants to RECEIVE messages must first send
+    "I allow callmebot to send me messages" to CallMeBot's WhatsApp
     number, after which CallMeBot issues an api_key tied to that phone.
 
-    For a single-shop deployment, the most realistic use is:
-      • Owner registers their own phone with CallMeBot once.
-      • Their api_key goes in Streamlit secrets.
-      • The shop owner receives status alerts; they forward important
-        ones to customers manually via WhatsApp.
+What we do
+----------
+1. Owner alerts (auto, via CallMeBot)
+   When a booking changes status, fire a formatted alert to the OWNER's
+   phone (the one tied to the api_key in secrets.toml). The message
+   embeds the customer's name + phone for context.
 
-    For per-customer push notifications, swap this module for Twilio
-    WhatsApp or the Meta WhatsApp Business API.
+2. Customer alerts (one-tap manual, via wa.me click-to-chat link)
+   We build a ``https://wa.me/<phone>?text=<message>`` deep-link and
+   surface it on the bookings page. Owner taps it once, WhatsApp opens
+   on their device with the message pre-filled, they hit Send. This
+   costs nothing, requires no API keys, and works for ANY customer
+   phone with no opt-in. It's the practical replacement for Twilio /
+   Meta WhatsApp Business until the shop is ready for those.
 
 All callers MUST tolerate failure — see ``notify_status_change``.
 """
@@ -21,6 +27,7 @@ from __future__ import annotations
 
 import logging
 from typing import Final
+from urllib.parse import quote
 
 import requests
 import streamlit as st
@@ -47,6 +54,35 @@ _STATUS_TEMPLATES: Final[dict[str, str]] = {
         "❌ *{token}* — {customer_name} ({customer_phone})\n"
         "Status: CANCELLED\n"
         "— Click2Serve"
+    ),
+}
+
+
+# Customer-facing templates — used to build the wa.me click-to-chat link.
+_CUSTOMER_TEMPLATES: Final[dict[str, str]] = {
+    "Pending": (
+        "Hi {customer_name}, we've received your booking *{token}* "
+        "({service_name}). We'll send another update once it moves to "
+        "'in progress'. — {shop_name}"
+    ),
+    "In Progress": (
+        "Hi {customer_name}, your booking *{token}* ({service_name}) is "
+        "now *in progress*. We'll let you know when it's ready. "
+        "— {shop_name}"
+    ),
+    "Ready": (
+        "Hi {customer_name}, your booking *{token}* ({service_name}) is "
+        "*ready for pickup*! Please visit the shop during opening hours "
+        "to collect it. — {shop_name}"
+    ),
+    "Delivered": (
+        "Hi {customer_name}, your booking *{token}* ({service_name}) has "
+        "been *delivered*. Thank you for choosing us! — {shop_name}"
+    ),
+    "Cancelled": (
+        "Hi {customer_name}, your booking *{token}* ({service_name}) has "
+        "been *cancelled*. Please contact us if you have any questions. "
+        "— {shop_name}"
     ),
 }
 
@@ -227,3 +263,65 @@ def _send_whatsapp(*, phone: str, message: str, timeout: float) -> bool:
     except Exception as exc:  # last-resort safety
         logger.exception("Unexpected notification error: %s", exc)
         return False
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Customer click-to-chat link generation (no API, no opt-in needed)
+# ──────────────────────────────────────────────────────────────────────────
+def _shop_name() -> str:
+    """Read shop_name from config for use in customer-facing messages."""
+    try:
+        from core.db import get_shop_config
+
+        cfg = get_shop_config() or {}
+        return (cfg.get("shop_name") or "Click2Serve").strip() or "Click2Serve"
+    except Exception:  # noqa: BLE001
+        return "Click2Serve"
+
+
+def customer_status_message(
+    *,
+    status: str,
+    token: str,
+    customer_name: str,
+    service_name: str,
+    shop_name: str | None = None,
+) -> str:
+    """Build the customer-facing message text for a given status.
+
+    Always returns a usable string — falls back to a generic
+    "status updated" line if the status isn't in the customer template
+    map. Uses just the customer's first name to keep the greeting
+    natural ("Hi Rajesh," instead of "Hi Rajesh Kumar Sharma,").
+    """
+    template = _CUSTOMER_TEMPLATES.get(status) or (
+        "Hi {customer_name}, your booking *{token}* ({service_name}) "
+        "status is now *{status}*. — {shop_name}"
+    )
+    first_name = (customer_name or "").strip().split()[:1]
+    return template.format(
+        token=(token or "").strip() or "—",
+        customer_name=(first_name[0] if first_name else "there"),
+        service_name=(service_name or "your service").strip() or "your service",
+        shop_name=(shop_name or _shop_name()),
+        status=status,
+    )
+
+
+def customer_whatsapp_chat_url(*, customer_phone: str, message: str) -> str:
+    """Return a wa.me deep-link that opens WhatsApp with a pre-filled
+    message ready to send to the given customer.
+
+    Returns an empty string when ``customer_phone`` is empty/invalid;
+    callers should hide their button in that case. The number is
+    normalized to international form WITHOUT the leading '+' (which is
+    what wa.me expects), so '9876543210' becomes '919876543210'.
+    """
+    if not (customer_phone or "").strip():
+        return ""
+    # _normalize_phone returns "+919876543210" — strip the leading "+"
+    # because wa.me expects the digits only.
+    norm = _normalize_phone(customer_phone).lstrip("+")
+    if not norm or not norm.isdigit():
+        return ""
+    return f"https://wa.me/{norm}?text={quote(message)}"
