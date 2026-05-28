@@ -102,22 +102,22 @@ def build_nav() -> dict[str, list[st.Page]]:
     if st.session_state.get("logged_in"):
         pages["Owner"] = [
             st.Page("pages/dashboard.py", title="Dashboard",
-                    icon=":material/dashboard:"),
+                    icon="📊"),
             st.Page("pages/bookings.py", title="Bookings",
-                    icon=":material/folder_open:"),
+                    icon="📁"),
             st.Page("pages/services.py", title="Services",
-                    icon=":material/miscellaneous_services:"),
+                    icon="🛠️"),
             st.Page("pages/revenue.py", title="Revenue",
-                    icon=":material/savings:"),
+                    icon="💰"),
             st.Page("pages/settings.py", title="Settings",
-                    icon=":material/tune:"),
+                    icon="⚙️"),
             st.Page("pages/logout.py", title="Sign out",
-                    icon=":material/logout:"),
+                    icon="🚪"),
         ]
     elif _owner_route_visible():
         pages["Owner"] = [
             st.Page("pages/login.py", title="Owner login",
-                    icon=":material/lock:"),
+                    icon="🔒"),
         ]
 
     return pages
