@@ -443,7 +443,7 @@ def update_shop_config(**fields: Any) -> None:
     allowed = {
         "shop_name", "owner_name", "owner_phone", "address",
         "upi_vpa", "upi_payee_name", "opening_hours",
-        "whatsapp_enabled",
+        "whatsapp_enabled", "twilio_enabled",
     }
     clean = {
         k: (v.strip() if isinstance(v, str) else v)

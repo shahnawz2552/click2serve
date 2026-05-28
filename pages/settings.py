@@ -4,7 +4,10 @@ from __future__ import annotations
 import streamlit as st
 
 from core.db import get_shop_config, update_shop_config
-from core.notifications import is_api_key_configured, send_test_message
+from core.notifications import (
+    is_api_key_configured, is_twilio_configured,
+    send_test_message, send_twilio_test,
+)
 from core.payments import is_valid_vpa
 from core.styles import inject_global_css, section_header
 
@@ -151,28 +154,51 @@ st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
 st.markdown(
     "<div class='c2s-cat'>Section 03</div>"
     "<h3 style='margin:0 0 0.5rem;'>Customer notifications — WhatsApp.</h3>"
-    "<p style='color:#5A6157; margin:0 0 1rem;'>"
-    "When enabled, customers receive a WhatsApp message at every major "
-    "status change (In Progress, Ready, Delivered, Cancelled). Powered "
-    "by the free CallMeBot API."
+    "<p style='color:#5A6157; margin:0 0 0.6rem;'>"
+    "Notifications work in <b>two complementary ways</b>:"
+    "</p>"
+    "<ol style='color:#5A6157; margin:0 0 1rem; padding-left:1.2rem;'>"
+    "<li><b>Owner alert (auto):</b> when a booking changes status, you "
+    "receive a WhatsApp ping on the contact number above. Powered by "
+    "the free CallMeBot API — requires the api_key in your Streamlit "
+    "secrets and a one-time activation of <i>your</i> phone with "
+    "CallMeBot.</li>"
+    "<li><b>Customer notify (one tap):</b> on the Bookings page, every "
+    "open booking shows a <b>Send WhatsApp to customer</b> button. "
+    "Tap it — WhatsApp opens on your device with a properly composed "
+    "message pre-filled, and you press Send. Zero cost, works for any "
+    "customer phone, no API approvals.</li>"
+    "</ol>"
+    "<p style='color:#5A6157; font-size:0.86rem; margin:0 0 1rem;'>"
+    "<i>Want truly automatic customer push?</i> Swap CallMeBot for "
+    "Twilio WhatsApp or Meta WhatsApp Business in "
+    "<code>core/notifications.py</code>. Both require business KYC + "
+    "template approvals; the click-to-chat flow above is the practical "
+    "MVP path."
     "</p>",
     unsafe_allow_html=True,
 )
 
 # Status indicator: is the CallMeBot api_key configured?
 api_key_ok = is_api_key_configured()
-if api_key_ok:
+owner_phone_set = bool(_shop_val("owner_phone"))
+
+if api_key_ok and owner_phone_set:
     st.success(
-        "CallMeBot API key is **configured** in `secrets.toml`. "
-        "Notifications can be sent."
+        f"Notifications will be delivered to **{_shop_val('owner_phone')}**."
     )
-else:
+elif not api_key_ok:
     st.warning(
         "CallMeBot API key is **not configured**. Even if you enable the "
         "toggle below, no messages will go out until you add "
         "`[callmebot]\\napi_key = \"...\"` to your Streamlit secrets. "
         "Get a free key at "
         "https://www.callmebot.com/blog/free-api-whatsapp-messages/"
+    )
+elif not owner_phone_set:
+    st.warning(
+        "**Contact number** in Section 01 above is empty. Notifications "
+        "are delivered to that number — please save a phone there first."
     )
 
 # Default the toggle to True (matches old always-on behaviour) when the
@@ -183,12 +209,12 @@ if notif_default is None:
 
 with st.form("notifications_form"):
     whatsapp_enabled = st.checkbox(
-        "Send WhatsApp notifications to customers on status changes",
+        "Send WhatsApp notifications to the shop owner on status changes",
         value=bool(notif_default),
         help=(
-            "Disable this if you'd rather message customers manually, or "
-            "while you finish CallMeBot setup. Per-status messages still "
-            "log internally; only the outbound HTTP call is suppressed."
+            "Disable this if you'd rather track everything from the "
+            "Bookings queue. Status changes still log internally; only "
+            "the outbound WhatsApp call to CallMeBot is suppressed."
         ),
     )
     save_notif = st.form_submit_button(
@@ -202,7 +228,7 @@ if save_notif:
         update_shop_config(whatsapp_enabled=bool(whatsapp_enabled))
         st.success(
             "Notification settings saved. "
-            + ("Customers will be alerted on status changes."
+            + ("You'll get a WhatsApp ping when bookings change status."
                if whatsapp_enabled
                else "Outbound WhatsApp alerts are now off.")
         )
@@ -210,9 +236,8 @@ if save_notif:
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not save notification settings: {exc}")
 
-# Test-message helper — bypasses the toggle so you can verify your
-# CallMeBot setup before flipping the switch on.
-with st.expander("Send a test message"):
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+with st.expander("Send a test WhatsApp to yourself (CallMeBot)"):
     st.caption(
         "Sends a single 'this is a test' message to the number you enter, "
         "ignoring the toggle above. Useful for verifying that the receiving "
@@ -236,6 +261,135 @@ with st.expander("Send a test message"):
         else:
             st.error(reason)
 
+
+# ── Section 04 — Twilio WhatsApp (auto-send to customer) ──────────────────
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat'>Section 04</div>"
+    "<h3 style='margin:0 0 0.5rem;'>Auto-send to customer (Twilio WhatsApp).</h3>"
+    "<p style='color:#5A6157; margin:0 0 0.8rem;'>"
+    "When enabled, every booking status change automatically sends a "
+    "WhatsApp message to the customer via Twilio. The wa.me click-to-chat "
+    "link on the Bookings page stays available as a fallback whenever this "
+    "auto-send fails or is off."
+    "</p>",
+    unsafe_allow_html=True,
+)
+
+twilio_ready = is_twilio_configured()
+if twilio_ready:
+    st.success(
+        "Twilio credentials are **configured** in `secrets.toml`. "
+        "Auto-send is ready to enable."
+    )
+else:
+    st.warning(
+        "Twilio credentials are **not configured**. Add a `[twilio]` "
+        "block to your Streamlit secrets to enable auto-send. "
+        "Setup instructions in the expander below."
+    )
+
+twilio_default = bool(shop.get("twilio_enabled"))
+
+with st.form("twilio_form"):
+    twilio_enabled = st.checkbox(
+        "Auto-send WhatsApp to customer on every status change",
+        value=twilio_default,
+        disabled=not twilio_ready,
+        help=(
+            "Requires a [twilio] block in secrets.toml with account_sid, "
+            "auth_token, and from_number. The shop owner is billed for "
+            "every message Twilio delivers (sandbox is free for tests)."
+        ),
+    )
+    save_twilio = st.form_submit_button(
+        "Save Twilio settings →",
+        type="primary",
+        use_container_width=True,
+        disabled=not twilio_ready,
+    )
+
+if save_twilio:
+    try:
+        update_shop_config(twilio_enabled=bool(twilio_enabled))
+        st.success(
+            "Saved. "
+            + ("Customers will now be auto-notified on every status change."
+               if twilio_enabled
+               else "Auto-send is now off. The wa.me click-to-chat link "
+                    "on Bookings still works.")
+        )
+        st.rerun()
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Could not save Twilio settings: {exc}")
+
+with st.expander("Send a test WhatsApp via Twilio"):
+    st.caption(
+        "Sends a single 'test message' via Twilio to the phone you enter. "
+        "Bypasses the toggle above so you can verify Twilio is reachable "
+        "BEFORE turning auto-send on. The recipient must have joined your "
+        "Twilio sandbox (production accounts can send to anyone)."
+    )
+    twilio_test_phone = st.text_input(
+        "Phone number to test (with country code)",
+        value=_shop_val("owner_phone"),
+        max_chars=15,
+        key="twilio_test_phone",
+        help="Include country code, e.g. +919876543210.",
+    )
+    if st.button(
+        "Send test via Twilio",
+        key="twilio_test_btn",
+        use_container_width=True,
+        disabled=not twilio_ready,
+    ):
+        ok, reason = send_twilio_test(phone=twilio_test_phone)
+        if ok:
+            st.success(reason)
+        else:
+            st.error(reason)
+
+with st.expander("Twilio setup — step by step"):
+    st.markdown(
+        """
+        1. **Create a free Twilio account** at https://www.twilio.com/try-twilio.
+        2. **Activate the WhatsApp Sandbox**:
+           Console → Messaging → Try it out → *Send a WhatsApp message*.
+           Twilio gives you a sandbox phone number (default `+14155238886`)
+           and a join code like `join silver-rocket`.
+        3. **Each customer phone that should receive sandbox messages** must
+           send `join silver-rocket` (your code) to that sandbox number via
+           WhatsApp. Once activated, the phone can receive Twilio sandbox
+           messages automatically — no further opt-in per message.
+        4. **Add to your Streamlit secrets** (locally `.streamlit/secrets.toml`,
+           in the cloud Settings → Secrets):
+
+           ```toml
+           [twilio]
+           account_sid = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+           auth_token  = "your-32-char-auth-token"
+           from_number = "+14155238886"   # sandbox or your approved number
+           ```
+
+        5. **Test** with the button above, then flip the **Auto-send**
+           toggle on. Status changes will now reach customers automatically.
+
+        ---
+
+        **Graduating from sandbox to production**:
+        - Apply for a WhatsApp Business sender via Twilio Console.
+        - Get a phone number approved by Meta and a few message templates
+          pre-approved (1–2 days of paperwork).
+        - Replace `from_number` in secrets with your approved number.
+        - Customer phones no longer need a join code, but free-form
+          messages are limited to a 24-hour window after the customer
+          messages you; outside that window, only approved templates can
+          be sent.
+        """
+    )
+
+
+# ── Section 05 — Razorpay roadmap (unchanged) ─────────────────────────────
 st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
 with st.expander("Want auto-reconciled payments? (Razorpay roadmap)"):
     st.markdown(

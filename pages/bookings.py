@@ -16,7 +16,12 @@ from core.db import (
     reject_payment, update_booking_payment, update_booking_status,
     verify_payment,
 )
-from core.notifications import notify_status_change
+from core.notifications import (
+    customer_status_message,
+    customer_whatsapp_chat_url,
+    notify_customer_twilio,
+    notify_status_change,
+)
 from core.styles import (
     inject_global_css, payment_badge, section_header, status_badge,
 )
@@ -214,25 +219,89 @@ with st.container(border=True):
                             if status == "Ready" and not is_current
                             else "secondary")):
             update_booking_status(_g(booking, "id"), status)
-            # Fire a WhatsApp notification (best-effort, never blocks).
-            sent = False
+            # Owner alert via CallMeBot (best-effort, never blocks).
+            sent_owner = False
             try:
-                sent = notify_status_change(
-                    phone=_g(booking, "customer_phone", ""),
+                sent_owner = notify_status_change(
                     token=_g(booking, "token", ""),
                     status=status,
+                    customer_name=_g(booking, "customer_name", ""),
+                    customer_phone=_g(booking, "customer_phone", ""),
                 )
             except Exception:
                 pass  # already logged inside notify_status_change
 
+            # Customer auto-notify via Twilio (best-effort, never blocks).
+            # Returns (False, reason) when the toggle is off or creds are
+            # missing — both expected, so we only surface real failures.
+            twilio_ok = False
+            twilio_reason = ""
+            try:
+                twilio_ok, twilio_reason = notify_customer_twilio(
+                    customer_phone=_g(booking, "customer_phone", ""),
+                    status=status,
+                    token=_g(booking, "token", ""),
+                    customer_name=_g(booking, "customer_name", ""),
+                    service_name=_g(booking, "service_name", ""),
+                )
+            except Exception as exc:  # noqa: BLE001
+                twilio_reason = f"unexpected: {exc}"
+
             msg = f"Status updated to **{status}**."
-            if sent:
-                msg += " WhatsApp alert sent to customer."
-            elif status in ("In Progress", "Ready", "Delivered", "Cancelled"):
-                msg += (" (WhatsApp alert was not sent — see secrets / "
-                        "CallMeBot setup.)")
+            if sent_owner:
+                msg += " Owner WhatsApp ping sent."
+            if twilio_ok:
+                msg += " Customer auto-notified via Twilio."
+            elif twilio_reason and not (
+                "disabled" in twilio_reason
+                or "not configured" in twilio_reason
+            ):
+                # Surface real failures but stay quiet about the expected
+                # 'toggle off / no creds' cases — those are normal.
+                msg += f" (Twilio: {twilio_reason})"
+            elif status in ("In Progress", "Ready", "Delivered", "Cancelled") \
+                    and not sent_owner:
+                msg += (" (No WhatsApp pings sent — see Settings → "
+                        "Customer notifications.)")
             st.success(msg)
             st.rerun()
+
+    # ── One-tap "Send WhatsApp to customer" link ───────────────────────
+    # CallMeBot can only deliver to phones that have explicitly opted in,
+    # so we can't auto-push to arbitrary customers. Instead, generate a
+    # wa.me click-to-chat link with the message pre-filled — owner taps
+    # the link, WhatsApp opens, owner taps Send. Zero cost, works for
+    # any customer phone, no API approvals.
+    customer_phone = _g(booking, "customer_phone", "")
+    customer_name = _g(booking, "customer_name", "")
+    if customer_phone:
+        _msg = customer_status_message(
+            status=current_status,
+            token=_g(booking, "token", ""),
+            customer_name=customer_name,
+            service_name=_g(booking, "service_name", "your service"),
+        )
+        _url = customer_whatsapp_chat_url(
+            customer_phone=customer_phone, message=_msg,
+        )
+        if _url:
+            st.markdown(
+                "<div style='height:0.8rem;'></div>"
+                "<div class='c2s-cat'>Notify customer</div>"
+                "<p style='color:#5A6157; font-size:0.85rem; margin:0 0 0.5rem;'>"
+                "Tap below to open WhatsApp on your device with this "
+                "message pre-filled — you only have to press Send."
+                "</p>",
+                unsafe_allow_html=True,
+            )
+            label = (
+                f"📲 Send WhatsApp to "
+                f"{(customer_name.split()[0] if customer_name else 'customer')} "
+                f"({customer_phone}) →"
+            )
+            st.link_button(label, _url, use_container_width=True)
+            with st.expander("Preview / copy the message"):
+                st.code(_msg, language=None)
 
     st.markdown("<hr class='c2s-rule' style='margin:1.6rem 0 1rem;'/>",
                 unsafe_allow_html=True)
