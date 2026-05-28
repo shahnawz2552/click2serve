@@ -28,11 +28,26 @@ import streamlit as st
 logger = logging.getLogger(__name__)
 
 _STATUS_TEMPLATES: Final[dict[str, str]] = {
-    "In Progress": "Your booking {token} is now being processed. — Click2Serve",
-    "Ready":       "Your booking {token} is ready for pickup! — Click2Serve",
-    "Delivered":   "Your booking {token} has been delivered. Thank you! — Click2Serve",
-    "Cancelled":   ("Your booking {token} has been cancelled. "
-                    "Contact the shop for details. — Click2Serve"),
+    "In Progress": (
+        "🔧 *{token}* — {customer_name} ({customer_phone})\n"
+        "Status: IN PROGRESS\n"
+        "— Click2Serve"
+    ),
+    "Ready": (
+        "✅ *{token}* — {customer_name} ({customer_phone})\n"
+        "Status: READY for pickup\n"
+        "— Click2Serve"
+    ),
+    "Delivered": (
+        "📦 *{token}* — {customer_name} ({customer_phone})\n"
+        "Status: DELIVERED\n"
+        "— Click2Serve"
+    ),
+    "Cancelled": (
+        "❌ *{token}* — {customer_name} ({customer_phone})\n"
+        "Status: CANCELLED\n"
+        "— Click2Serve"
+    ),
 }
 
 _CALLMEBOT_URL: Final[str] = "https://api.callmebot.com/whatsapp.php"
@@ -85,17 +100,49 @@ def _normalize_phone(phone: str) -> str:
     return "+" + p
 
 
-def notify_status_change(
-    *, phone: str, token: str, status: str, timeout: float = 5.0,
-) -> bool:
-    """Fire a WhatsApp message when a booking status changes.
+def _owner_phone() -> str:
+    """Read the shop owner's phone from config.
 
-    Returns True if the request returned 2xx, False otherwise. NEVER raises —
+    This is the phone where status alerts are delivered. CallMeBot's free
+    API only sends to phones that have activated themselves, so for a
+    multi-customer shop it makes no sense to target ``customer_phone`` —
+    we ping the owner and they relay to the customer manually.
+    """
+    try:
+        from core.db import get_shop_config
+
+        cfg = get_shop_config() or {}
+        return (cfg.get("owner_phone") or "").strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Could not read owner_phone: %s", exc)
+        return ""
+
+
+def notify_status_change(
+    *,
+    token: str,
+    status: str,
+    customer_name: str = "",
+    customer_phone: str = "",
+    timeout: float = 5.0,
+) -> bool:
+    """Send a WhatsApp alert to the SHOP OWNER when a booking status changes.
+
+    The message includes the customer's name + phone so the owner can copy
+    them and forward the update to the customer via their own WhatsApp.
+
+    Why not message the customer directly? CallMeBot's free API requires
+    each receiving phone to have sent the activation message — so it can
+    only deliver to phones the shop has explicitly onboarded. For
+    real customer-facing push, swap this module for Twilio WhatsApp or
+    the Meta WhatsApp Business API.
+
+    Returns True on a successful 2xx from CallMeBot. NEVER raises —
     notification failure must not block the underlying status update.
     """
     template = _STATUS_TEMPLATES.get(status)
     if not template:
-        return False  # statuses like "Pending" don't ping the customer
+        return False  # statuses like "Pending" don't ping the owner
 
     if not _whatsapp_enabled():
         logger.info(
@@ -105,14 +152,25 @@ def notify_status_change(
         )
         return False
 
-    api_key = _api_key()
-    if not api_key:
+    if not _api_key():
         logger.info("CallMeBot api_key not configured — skipping notification.")
         return False
 
-    return _send_whatsapp(
-        phone=phone, message=template.format(token=token), timeout=timeout,
+    target = _owner_phone()
+    if not target:
+        logger.info(
+            "owner_phone not set in Settings — cannot deliver WhatsApp "
+            "alert for token=%s.",
+            token,
+        )
+        return False
+
+    message = template.format(
+        token=token,
+        customer_name=(customer_name or "—").strip() or "—",
+        customer_phone=(customer_phone or "—").strip() or "—",
     )
+    return _send_whatsapp(phone=target, message=message, timeout=timeout)
 
 
 def send_test_message(*, phone: str, timeout: float = 5.0) -> tuple[bool, str]:

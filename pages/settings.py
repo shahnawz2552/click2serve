@@ -152,27 +152,41 @@ st.markdown(
     "<div class='c2s-cat'>Section 03</div>"
     "<h3 style='margin:0 0 0.5rem;'>Customer notifications — WhatsApp.</h3>"
     "<p style='color:#5A6157; margin:0 0 1rem;'>"
-    "When enabled, customers receive a WhatsApp message at every major "
-    "status change (In Progress, Ready, Delivered, Cancelled). Powered "
-    "by the free CallMeBot API."
+    "When enabled, <b>you</b> (the shop owner) receive a WhatsApp alert at "
+    "every major booking status change (In Progress · Ready · Delivered · "
+    "Cancelled). The message includes the customer's name and phone so you "
+    "can copy and forward it to them in your own WhatsApp."
+    "</p>"
+    "<p style='color:#5A6157; margin:0 0 1rem; font-size:0.86rem;'>"
+    "<i>Why not message customers directly?</i> CallMeBot's free API only "
+    "delivers to phones that have first sent it an activation message. "
+    "Asking every customer to do that isn't practical, so this MVP routes "
+    "alerts to the owner instead. For true customer push, swap CallMeBot "
+    "for Twilio or Meta WhatsApp Business in <code>core/notifications.py</code>."
     "</p>",
     unsafe_allow_html=True,
 )
 
 # Status indicator: is the CallMeBot api_key configured?
 api_key_ok = is_api_key_configured()
-if api_key_ok:
+owner_phone_set = bool(_shop_val("owner_phone"))
+
+if api_key_ok and owner_phone_set:
     st.success(
-        "CallMeBot API key is **configured** in `secrets.toml`. "
-        "Notifications can be sent."
+        f"Notifications will be delivered to **{_shop_val('owner_phone')}**."
     )
-else:
+elif not api_key_ok:
     st.warning(
         "CallMeBot API key is **not configured**. Even if you enable the "
         "toggle below, no messages will go out until you add "
         "`[callmebot]\\napi_key = \"...\"` to your Streamlit secrets. "
         "Get a free key at "
         "https://www.callmebot.com/blog/free-api-whatsapp-messages/"
+    )
+elif not owner_phone_set:
+    st.warning(
+        "**Contact number** in Section 01 above is empty. Notifications "
+        "are delivered to that number — please save a phone there first."
     )
 
 # Default the toggle to True (matches old always-on behaviour) when the
@@ -183,12 +197,12 @@ if notif_default is None:
 
 with st.form("notifications_form"):
     whatsapp_enabled = st.checkbox(
-        "Send WhatsApp notifications to customers on status changes",
+        "Send WhatsApp notifications to the shop owner on status changes",
         value=bool(notif_default),
         help=(
-            "Disable this if you'd rather message customers manually, or "
-            "while you finish CallMeBot setup. Per-status messages still "
-            "log internally; only the outbound HTTP call is suppressed."
+            "Disable this if you'd rather track everything from the "
+            "Bookings queue. Status changes still log internally; only "
+            "the outbound WhatsApp call to CallMeBot is suppressed."
         ),
     )
     save_notif = st.form_submit_button(
@@ -202,7 +216,7 @@ if save_notif:
         update_shop_config(whatsapp_enabled=bool(whatsapp_enabled))
         st.success(
             "Notification settings saved. "
-            + ("Customers will be alerted on status changes."
+            + ("You'll get a WhatsApp ping when bookings change status."
                if whatsapp_enabled
                else "Outbound WhatsApp alerts are now off.")
         )

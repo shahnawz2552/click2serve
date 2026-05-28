@@ -218,19 +218,20 @@ with st.container(border=True):
             sent = False
             try:
                 sent = notify_status_change(
-                    phone=_g(booking, "customer_phone", ""),
                     token=_g(booking, "token", ""),
                     status=status,
+                    customer_name=_g(booking, "customer_name", ""),
+                    customer_phone=_g(booking, "customer_phone", ""),
                 )
             except Exception:
                 pass  # already logged inside notify_status_change
 
             msg = f"Status updated to **{status}**."
             if sent:
-                msg += " WhatsApp alert sent to customer."
+                msg += " WhatsApp alert sent to your phone."
             elif status in ("In Progress", "Ready", "Delivered", "Cancelled"):
-                msg += (" (WhatsApp alert was not sent — see secrets / "
-                        "CallMeBot setup.)")
+                msg += (" (WhatsApp alert was not sent — see Settings → "
+                        "Customer notifications.)")
             st.success(msg)
             st.rerun()
 
