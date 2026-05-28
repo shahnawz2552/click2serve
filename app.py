@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="Click2Serve — Digital Service Hub",
     page_icon="🛎️",
     layout="wide",
-    initial_sidebar_state="collapsed",  # mobile-first
+    initial_sidebar_state="auto",  # expanded on desktop, collapsed on mobile
     menu_items={
         "Get help": None,
         "Report a bug": None,
