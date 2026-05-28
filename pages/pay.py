@@ -51,20 +51,39 @@ if not booking:
 st.session_state["pay_token"] = token
 st.session_state["pay_phone"] = phone
 
-amount_due = (booking["govt_fee"] or 0) + (booking["service_charge"] or 0)
+
+# ── Defensive booking-row helpers ────────────────────────────────────────
+# Older booking rows / partial Supabase responses may be missing newer
+# columns (e.g. payment_status, amount_paid). Reading them via plain []
+# raised KeyError on /pay. These helpers treat any missing field as a
+# safe default so the page always renders.
+def _b(key: str, default=""):
+    val = booking.get(key) if isinstance(booking, dict) else None
+    return default if val is None else val
+
+
+def _bint(key: str, default: int = 0) -> int:
+    try:
+        return int(_b(key, default) or 0)
+    except (TypeError, ValueError):
+        return default
+
+
+amount_due = _bint("govt_fee", 0) + _bint("service_charge", 0)
+payment_status = _b("payment_status", "unpaid")
 
 # Already paid?
-if booking["payment_status"] == "verified":
+if payment_status == "verified":
     st.success(
-        f"This booking is already paid in full (₹{booking['amount_paid']})."
+        f"This booking is already paid in full (₹{_bint('amount_paid', 0)})."
     )
     st.stop()
 
-if booking["payment_status"] == "submitted":
+if payment_status == "submitted":
     st.warning(
         "Your payment is awaiting verification by the shop owner. "
-        f"You submitted UTR **{booking.get('payment_ref')}** for "
-        f"₹{booking['amount_paid']}."
+        f"You submitted UTR **{_b('payment_ref', '')}** for "
+        f"₹{_bint('amount_paid', 0)}."
     )
     st.caption(
         "✅ UTR submitted. The shop owner typically verifies within 15 minutes."
@@ -77,13 +96,13 @@ with st.container(border=True):
     s1.markdown(
         f"<div class='c2s-cat'>Token</div>"
         f"<div style='font-size:1.3rem; font-weight:900; "
-        f"letter-spacing:-0.03em; color:#0E120F;'>{booking['token']}</div>",
+        f"letter-spacing:-0.03em; color:#0E120F;'>{_b('token', '—')}</div>",
         unsafe_allow_html=True,
     )
     s2.markdown(
         f"<div class='c2s-cat'>Service</div>"
         f"<div style='font-weight:600; color:#0E120F;'>"
-        f"{booking['service_name']}</div>",
+        f"{_b('service_name', '—')}</div>",
         unsafe_allow_html=True,
     )
     s3.markdown(
@@ -110,12 +129,19 @@ if not is_valid_vpa(shop_vpa):
         st.info(f"Shop owner: {owner_phone}")
     st.stop()
 
+if amount_due <= 0:
+    st.warning(
+        "This booking has no amount due (₹0). Please contact the shop "
+        "owner if you believe this is incorrect."
+    )
+    st.stop()
+
 # ── Build UPI deep link + QR ────────────────────────────────────────────────
 upi_uri = build_upi_uri(
     payee_vpa=shop_vpa,
     payee_name=shop_payee_name,
     amount=amount_due,
-    note=f"Click2Serve {booking['token']}",
+    note=f"Click2Serve {_b('token', '')}",
 )
 
 st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
@@ -204,7 +230,19 @@ if submit:
         st.error("Please enter a valid 10–22 character UTR (alphanumeric).")
         st.stop()
 
-    submit_payment_proof(booking["id"], ref=utr, amount=amount_due, method="UPI")
+    booking_id = _b("id", None)
+    if booking_id is None:
+        st.error("Could not identify this booking. Please reload the page.")
+        st.stop()
+
+    try:
+        submit_payment_proof(
+            booking_id, ref=utr, amount=amount_due, method="UPI",
+        )
+    except Exception as exc:  # noqa: BLE001 — surface DB errors to user
+        st.error(f"Could not record your payment proof: {exc}")
+        st.stop()
+
     st.success(
         "✅ UTR submitted. The shop owner typically verifies within 15 minutes."
     )

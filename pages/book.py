@@ -93,9 +93,9 @@ with st.container(border=True):
         unsafe_allow_html=True,
     )
     info_cols = st.columns(3)
-    info_cols[0].metric("Govt fee", f"₹{service['govt_fee']}")
-    info_cols[1].metric("Service charge", f"₹{service['service_charge']}")
-    info_cols[2].metric("ETA", f"{service['eta_hours']}h")
+    info_cols[0].metric("Govt fee", f"₹{service.get('govt_fee') or 0}")
+    info_cols[1].metric("Service charge", f"₹{service.get('service_charge') or 0}")
+    info_cols[2].metric("ETA", f"{service.get('eta_hours') or 0}h")
     if service.get("requirements"):
         st.markdown(
             f"<div style='margin-top:0.7rem; font-size:0.82rem; "

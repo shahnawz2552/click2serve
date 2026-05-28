@@ -32,6 +32,22 @@ section_header(
 )
 
 
+# ── Defensive row-reading helpers ────────────────────────────────────────
+# Booking rows from Supabase can have NULL columns or be missing newer
+# fields entirely. Reading via [] then crashes the page. These helpers
+# treat any missing field as a safe default.
+def _r(row: dict, key: str, default=""):
+    val = row.get(key) if isinstance(row, dict) else None
+    return default if val is None else val
+
+
+def _rint(row: dict, key: str, default: int = 0) -> int:
+    try:
+        return int(_r(row, key, default) or 0)
+    except (TypeError, ValueError):
+        return default
+
+
 # ── Centered search form (mobile-first single column) ──────────────────────
 tab_one, tab_all = st.tabs(["Look up a token", "My bookings (by phone)"])
 
@@ -40,11 +56,11 @@ def _eta_text(booking: dict) -> str:
     """Return a friendly 'estimated by' string given created_at + ETA hours."""
     try:
         created = datetime.fromisoformat(
-            (booking.get("created_at") or "").replace("Z", "+00:00")
+            (_r(booking, "created_at", "") or "").replace("Z", "+00:00")
         )
     except ValueError:
         return ""
-    eta_h = booking.get("eta_hours") or 0
+    eta_h = _rint(booking, "eta_hours", 0)
     eta_dt = created + timedelta(hours=int(eta_h))
     return eta_dt.strftime("%a %d %b · %I:%M %p").replace(" 0", " ")
 
@@ -84,6 +100,9 @@ with tab_one:
             )
             st.stop()
 
+        booking_status = _r(booking, "status", "Pending")
+        booking_token = _r(booking, "token", "—")
+
         # ── Header card (token + status pill) ───────────────────────────
         with st.container(border=True):
             st.markdown(
@@ -93,12 +112,12 @@ with tab_one:
                 f"<div style='font-size:0.74rem; font-weight:600; color:{MUTED}; "
                 f"text-transform:uppercase; letter-spacing:0.06em;'>Token</div>"
                 f"<div class='c2s-token' style='margin-top:0.2rem;'>"
-                f"{booking['token']}</div>"
+                f"{booking_token}</div>"
                 f"</div>"
-                f"<div>{status_badge(booking['status'], big=True)}</div>"
+                f"<div>{status_badge(booking_status, big=True)}</div>"
                 f"</div>"
                 f"<div style='color:{MUTED}; font-size:0.82rem; margin-top:0.6rem;'>"
-                f"{STATUS_MESSAGE.get(booking['status'], booking['status'])}"
+                f"{STATUS_MESSAGE.get(booking_status, booking_status)}"
                 f"</div>",
                 unsafe_allow_html=True,
             )
@@ -107,10 +126,10 @@ with tab_one:
                     unsafe_allow_html=True)
 
         # ── Timeline ────────────────────────────────────────────────────
-        st.markdown(status_timeline(booking["status"]), unsafe_allow_html=True)
+        st.markdown(status_timeline(booking_status), unsafe_allow_html=True)
 
         eta = _eta_text(booking)
-        if eta and booking["status"] not in ("Delivered", "Cancelled"):
+        if eta and booking_status not in ("Delivered", "Cancelled"):
             st.markdown(
                 f"<div style='text-align:center; color:{MUTED}; font-size:"
                 f"0.85rem; margin-top:0.6rem;'>"
@@ -124,27 +143,29 @@ with tab_one:
                     unsafe_allow_html=True)
         with st.container(border=True):
             d1, d2, d3 = st.columns(3)
-            d1.metric("Service", booking["service_name"])
-            d2.metric("Category", booking["service_category"])
-            total = (booking["govt_fee"] or 0) + (booking["service_charge"] or 0)
+            d1.metric("Service", _r(booking, "service_name", "—"))
+            d2.metric("Category", _r(booking, "service_category", "—"))
+            total = _rint(booking, "govt_fee", 0) + \
+                _rint(booking, "service_charge", 0)
             d3.metric("Total fee", f"₹{total}")
 
             p1, p2 = st.columns(2)
-            p1.metric("Payment method", booking["payment_method"])
-            p2.metric("Amount paid", f"₹{booking['amount_paid']}")
+            p1.metric("Payment method", _r(booking, "payment_method", "Unpaid"))
+            p2.metric("Amount paid", f"₹{_rint(booking, 'amount_paid', 0)}")
 
             st.markdown(
                 "<div style='margin-top:0.4rem;'>"
-                + payment_badge(booking.get("payment_status") or "unpaid")
+                + payment_badge(_r(booking, "payment_status", "unpaid"))
                 + "</div>",
                 unsafe_allow_html=True,
             )
 
         # ── Pay-now CTA when there's still money owed ──────────────────
-        pstatus = booking.get("payment_status") or "unpaid"
-        if booking["amount_paid"] < total or pstatus in ("rejected", "unpaid"):
-            st.session_state["pay_token"] = booking["token"]
-            st.session_state["pay_phone"] = booking["customer_phone"]
+        pstatus = _r(booking, "payment_status", "unpaid")
+        amount_paid = _rint(booking, "amount_paid", 0)
+        if amount_paid < total or pstatus in ("rejected", "unpaid"):
+            st.session_state["pay_token"] = booking_token
+            st.session_state["pay_phone"] = _r(booking, "customer_phone", "")
             st.markdown("<div style='height:0.8rem;'></div>",
                         unsafe_allow_html=True)
             st.page_link("pages/pay.py", label="Pay online now →",
@@ -153,13 +174,14 @@ with tab_one:
         if pstatus == "submitted":
             st.warning(
                 f"Your payment is awaiting verification by the shop owner. "
-                f"UTR on file: **{booking.get('payment_ref')}**."
+                f"UTR on file: **{_r(booking, 'payment_ref', '')}**."
             )
         elif pstatus == "rejected":
             st.error("Your last payment proof was rejected. Please retry.")
 
         # ── Documents ──────────────────────────────────────────────────
-        docs = list_documents(booking["id"])
+        booking_id = _r(booking, "id", None)
+        docs = list_documents(booking_id) if booking_id is not None else []
         if docs:
             st.markdown("<div style='height:1rem;'></div>",
                         unsafe_allow_html=True)
@@ -173,11 +195,12 @@ with tab_one:
                 for d in docs:
                     st.markdown(
                         f"<div style='color:{INK}; font-size:0.9rem; "
-                        f"padding:0.2rem 0;'>📎  {d['file_name']}</div>",
+                        f"padding:0.2rem 0;'>📎  {_r(d, 'file_name', 'file')}"
+                        f"</div>",
                         unsafe_allow_html=True,
                     )
 
-        if booking.get("notes"):
+        if _r(booking, "notes"):
             st.markdown("<div style='height:0.8rem;'></div>",
                         unsafe_allow_html=True)
             st.info(booking["notes"])
@@ -207,7 +230,7 @@ with tab_all:
             st.error("Please enter your mobile number.")
             st.stop()
 
-        rows = list_bookings(phone=history_phone.strip(), limit=200)
+        rows = list_bookings(phone=history_phone.strip(), limit=200) or []
         if not rows:
             st.info("No bookings found for this number.")
             st.stop()
@@ -216,12 +239,13 @@ with tab_all:
 
         df = pd.DataFrame([
             {
-                "Token": r["token"],
-                "Service": r["service_name"],
-                "Status": r["status"],
-                "Paid (₹)": r["amount_paid"],
-                "Total (₹)": (r["govt_fee"] or 0) + (r["service_charge"] or 0),
-                "Created": (r["created_at"] or "").replace("T", " ")[:19],
+                "Token": _r(r, "token", "—"),
+                "Service": _r(r, "service_name", "—"),
+                "Status": _r(r, "status", "Pending"),
+                "Paid (₹)": _rint(r, "amount_paid", 0),
+                "Total (₹)": _rint(r, "govt_fee", 0)
+                              + _rint(r, "service_charge", 0),
+                "Created": str(_r(r, "created_at", "")).replace("T", " ")[:19],
             }
             for r in rows
         ])
