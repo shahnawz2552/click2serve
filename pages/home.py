@@ -49,6 +49,23 @@ with t3:
     st.markdown(trust_badge("⚡", "Same Day"), unsafe_allow_html=True)
 
 
+# ── Above-the-fold owner link ───────────────────────────────────────────────
+# Tiny, top-right link so shop owners can always find sign-in immediately on
+# landing — no sidebar required, no scrolling required. Customers can ignore.
+if not st.session_state.get("logged_in"):
+    _, owner_col = st.columns([5, 1])
+    with owner_col:
+        if st.button(
+            "Owner →",
+            key="home_owner_top_btn",
+            use_container_width=True,
+            help="Shop owners and staff: click to sign in.",
+        ):
+            st.session_state["show_owner_login"] = True
+            st.session_state["_pending_page_switch"] = "login"
+            st.rerun()
+
+
 # ── Filter row ──────────────────────────────────────────────────────────────
 st.markdown(
     "<div style='height:1.2rem;'></div>"
@@ -138,3 +155,38 @@ with ft1:
 with ft2:
     st.page_link("pages/pay.py", label="Pay online",
                  use_container_width=True)
+
+
+# ── Discreet owner-access link ─────────────────────────────────────────────
+# Mirrors the "Owner" button at the bottom of the sidebar so mobile users
+# with the sidebar collapsed can still find their way to the login page.
+# Intentionally small / muted so it doesn't compete with the customer CTAs.
+st.markdown(
+    f"<div style='height: 2.2rem;'></div>"
+    f"<div style='border-top:1px solid {BORDER}; "
+    f"margin: 0 -0.5rem 0.8rem;'></div>",
+    unsafe_allow_html=True,
+)
+
+if not st.session_state.get("logged_in"):
+    of1, of2, of3 = st.columns([1, 1, 1])
+    with of2:
+        if st.button(
+            "Owner",
+            key="home_owner_btn",
+            use_container_width=True,
+            help="Shop owners and staff: click to sign in.",
+        ):
+            # Same pending-switch handshake as the sidebar button in app.py:
+            # we can't switch directly to login.py because it isn't in the
+            # current st.navigation (we are about to add it). Set the flag
+            # and rerun — app.py's pending-switch handler will take over and
+            # call st.switch_page once the nav has been rebuilt.
+            st.session_state["show_owner_login"] = True
+            st.session_state["_pending_page_switch"] = "login"
+            st.rerun()
+        st.markdown(
+            f"<div style='color:{MUTED}; font-size:0.7rem; text-align:center; "
+            f"margin-top:0.3rem;'>Customers don't need to sign in.</div>",
+            unsafe_allow_html=True,
+        )
