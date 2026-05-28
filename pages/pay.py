@@ -154,20 +154,33 @@ st.markdown(
 col_qr, col_actions = st.columns([1, 1.2])
 
 with col_qr:
-    svg = qr_svg(upi_uri, scale=6, dark="#0E120F")
-    st.markdown(
-        f"<div style='background:#FFFFFF; padding:1.2rem; "
-        f"border:1px solid #1F2620; display:inline-block;'>{svg}</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"<div style='margin-top:0.6rem; font-size:0.86rem;'>"
-        f"<span style='color:#5A6157;'>Pay to</span> "
-        f"<b>{shop_payee_name}</b><br/>"
-        f"<code style='font-size:0.86rem; color:#0E120F;'>{shop_vpa}</code>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+    try:
+        svg = qr_svg(upi_uri, scale=6, dark="#0E120F")
+    except Exception as exc:  # noqa: BLE001
+        svg = ""
+        st.error(f"Could not generate QR code: {exc}")
+
+    if svg:
+        st.markdown(
+            f"<div style='background:#FFFFFF; padding:1.2rem; "
+            f"border:1px solid #1F2620; display:inline-block;'>{svg}</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div style='margin-top:0.6rem; font-size:0.86rem;'>"
+            f"<span style='color:#5A6157;'>Pay to</span> "
+            f"<b>{shop_payee_name}</b><br/>"
+            f"<code style='font-size:0.86rem; color:#0E120F;'>{shop_vpa}</code>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        # Fallback: at minimum the customer can still copy the UPI ID
+        # and pay manually, even if the QR could not be drawn.
+        st.warning(
+            f"Pay manually to **{shop_payee_name}** at UPI ID `{shop_vpa}` "
+            f"for ₹{amount_due}."
+        )
 
 with col_actions:
     st.markdown(

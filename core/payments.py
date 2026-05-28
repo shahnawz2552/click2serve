@@ -62,13 +62,21 @@ def build_upi_uri(
 def qr_svg(data: str, *, scale: int = 6, dark: str = "#1B4F8A") -> str:
     """Return an inline SVG string for the given payload.
 
-    Uses ``segno`` (pure-Python, no Pillow dependency). The SVG scales
-    cleanly in any browser and embeds well via ``st.markdown(..., unsafe_allow_html=True)``.
+    Uses ``segno`` (pure-Python, no Pillow dependency). The SVG embeds
+    explicit width/height attributes so it renders at a fixed size when
+    inlined via ``st.markdown(..., unsafe_allow_html=True)`` — without
+    them, some browsers render the SVG as 0x0 inside Streamlit's flex
+    column layout.
     """
     qr = segno.make(data, error="m")
     import io as _io
 
     buf = _io.BytesIO()
-    qr.save(buf, kind="svg", scale=scale, dark=dark, light="#ffffff",
-            xmldecl=False, svgns=True, omitsize=True, border=2)
+    qr.save(
+        buf, kind="svg", scale=scale, dark=dark, light="#ffffff",
+        xmldecl=False, svgns=True,
+        # omitsize=False (default) — keep width/height so the QR has an
+        # intrinsic size when embedded as raw HTML inside a flex layout.
+        border=2,
+    )
     return buf.getvalue().decode("utf-8")
