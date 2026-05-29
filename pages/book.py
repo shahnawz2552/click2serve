@@ -22,7 +22,8 @@ import streamlit as st
 
 from core.db import create_booking, list_services, save_document
 from core.document_checker import (
-    aspect_ratio_for_category, check_document, render_report_html,
+    aspect_ratio_for_category, check_document,
+    expected_document_type_for_service, render_report_html,
 )
 from core.styles import (
     BORDER, INK, MUTED, PRIMARY, category_badge, inject_global_css,
@@ -163,6 +164,10 @@ with st.form("booking_form", clear_on_submit=False):
     # selection) but the actual booking submit + storage upload happens
     # below, only when the form's submit button is clicked.
     expected_ratio = aspect_ratio_for_category(service["category"])
+    expected_type = expected_document_type_for_service(
+        service_name=service.get("name", ""),
+        category=service.get("category", ""),
+    )
     blocker_filenames: list[str] = []
     checked_files: list[tuple] = []  # (uploaded_file, report, raw_bytes)
     if uploaded:
@@ -194,6 +199,7 @@ with st.form("booking_form", clear_on_submit=False):
                 file_bytes=data,
                 file_name=upload.name,
                 expected_aspect_ratio=expected_ratio,
+                expected_document_type=expected_type,
             )
             checked_files.append((upload, report, data))
             st.markdown(
