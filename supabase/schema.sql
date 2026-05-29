@@ -78,6 +78,7 @@ create table if not exists shop_config (
     opening_hours   text not null default '',
     whatsapp_enabled boolean not null default true,
     twilio_enabled  boolean not null default false,
+    sms_enabled     boolean not null default false,
     -- Google Maps / Local SEO
     business_url    text not null default '',  -- canonical app URL (e.g. https://click2serve.streamlit.app)
     maps_url        text not null default '',  -- shareable Google Maps URL (https://maps.app.goo.gl/...)
@@ -113,6 +114,7 @@ alter table shop_config add column if not exists upi_payee_name text not null de
 alter table shop_config add column if not exists opening_hours  text not null default '';
 alter table shop_config add column if not exists whatsapp_enabled boolean not null default true;
 alter table shop_config add column if not exists twilio_enabled  boolean not null default false;
+alter table shop_config add column if not exists sms_enabled     boolean not null default false;
 -- Google Maps / Local SEO (safe to re-run on existing deployments)
 alter table shop_config add column if not exists business_url   text not null default '';
 alter table shop_config add column if not exists maps_url       text not null default '';
