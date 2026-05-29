@@ -515,3 +515,120 @@ def pending_verification_count() -> int:
         .execute()
     )
     return int(res.count or 0)
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Booking deletion (DESTRUCTIVE — gated behind owner-only Settings UI)
+# ──────────────────────────────────────────────────────────────────────────────
+# These helpers permanently remove booking rows AND their attached storage
+# objects. They are NOT exposed on the customer side. The Settings page
+# wraps them in a typed-confirmation flow so a slip of the cursor cannot
+# wipe the table.
+#
+# Why three functions?
+#   - delete_booking(id)           - single booking, the precise tool
+#   - delete_bookings_bulk(ids)    - multi-select on the bookings page
+#   - delete_all_bookings()        - the nuclear option ('reset all data')
+#
+# All three:
+#   1. Read the affected document rows so we can collect their storage keys.
+#   2. Best-effort delete each storage object (ignore "not found" — the
+#      DB row is what's authoritative).
+#   3. Delete the booking row(s). The 'documents' FK has ON DELETE CASCADE,
+#      so document rows go with the booking automatically.
+def _delete_storage_keys(keys: list[str]) -> None:
+    """Best-effort delete of a batch of storage keys.
+
+    Supabase Storage's bulk-delete accepts a list. If the bucket itself
+    doesn't exist (or the keys are stale), we swallow the error rather
+    than blocking the DB cleanup. The DB is the source of truth; an
+    orphaned blob is a cleanup nuisance, not a correctness bug.
+    """
+    if not keys:
+        return
+    sb = get_supabase()
+    bucket = _bucket()
+    try:
+        sb.storage.from_(bucket).remove(keys)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Could not delete %d storage object(s) from %s: %s",
+            len(keys), bucket, exc,
+        )
+
+
+def _collect_storage_keys_for_bookings(
+    booking_ids: list[int],
+) -> list[str]:
+    """Return every documents.file_path tied to any of the given bookings."""
+    if not booking_ids:
+        return []
+    sb = get_supabase()
+    res = (
+        sb.table("documents")
+        .select("file_path")
+        .in_("booking_id", [int(b) for b in booking_ids])
+        .execute()
+    )
+    return [r["file_path"] for r in (res.data or []) if r.get("file_path")]
+
+
+def delete_booking(booking_id: int) -> int:
+    """Delete a single booking + its documents (DB rows + storage blobs).
+
+    Returns the number of booking rows actually deleted (0 or 1) so the
+    caller can tell the user 'gone' vs 'already gone'.
+    """
+    booking_id = int(booking_id)
+    keys = _collect_storage_keys_for_bookings([booking_id])
+    _delete_storage_keys(keys)
+
+    sb = get_supabase()
+    res = sb.table("bookings").delete().eq("id", booking_id).execute()
+    return len(res.data or [])
+
+
+def delete_bookings_bulk(booking_ids: list[int]) -> int:
+    """Delete a list of bookings in one round-trip. Returns rows deleted."""
+    ids = [int(b) for b in (booking_ids or [])]
+    if not ids:
+        return 0
+    keys = _collect_storage_keys_for_bookings(ids)
+    _delete_storage_keys(keys)
+
+    sb = get_supabase()
+    res = sb.table("bookings").delete().in_("id", ids).execute()
+    return len(res.data or [])
+
+
+def delete_all_bookings() -> int:
+    """Wipe the entire bookings table + every related document blob.
+
+    Used by Settings -> Danger zone -> 'Reset all bookings'. The owner
+    has to type 'DELETE ALL' before this runs. Returns rows deleted.
+    """
+    sb = get_supabase()
+    # Pull every booking id so we can also flush its storage blobs.
+    rows = sb.table("bookings").select("id").execute().data or []
+    ids = [int(r["id"]) for r in rows if r.get("id") is not None]
+    if not ids:
+        return 0
+    keys = _collect_storage_keys_for_bookings(ids)
+    _delete_storage_keys(keys)
+
+    # Supabase requires a filter on bulk deletes; gte=0 matches every row
+    # since IDs are positive bigserial.
+    res = sb.table("bookings").delete().gte("id", 0).execute()
+    return len(res.data or [])
+
+
+def count_bookings() -> int:
+    """Cheap COUNT(*) for confirmation dialogs."""
+    sb = get_supabase()
+    try:
+        res = sb.table("bookings").select("id", count="exact").execute()
+        return int(getattr(res, "count", 0) or 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("count_bookings failed: %s", exc)
+        return 0
