@@ -7,6 +7,7 @@ from core.db import (
     count_bookings, delete_all_bookings, get_shop_config,
     update_shop_config,
 )
+from core.email_sender import is_email_configured, send_test_email
 from core.notifications import (
     is_api_key_configured, is_twilio_configured,
     send_test_message, send_twilio_test,
@@ -417,9 +418,121 @@ with st.expander("Want auto-reconciled payments? (Razorpay roadmap)"):
 
 
 
+# ── Section 05a — Booking-confirmation email (SMTP) ─────────────────────
+# Lets the owner configure SMTP credentials (server-side only, in
+# Streamlit secrets) and run a test email before relying on it. When
+# configured, every new booking emails the customer their booking
+# number + service summary right after submit.
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat'>Section 05a</div>"
+    "<h3 style='margin:0 0 0.5rem;'>Booking confirmation \u2014 email.</h3>"
+    "<p style='color:#5A6157; margin:0 0 0.8rem;'>"
+    "When configured, customers automatically receive their booking "
+    "number and service summary by email immediately after submission. "
+    "Combined with the WhatsApp confirmation, this gives every customer "
+    "two independent copies of their booking number."
+    "</p>",
+    unsafe_allow_html=True,
+)
+
+email_ready = is_email_configured()
+if email_ready:
+    st.success(
+        "SMTP credentials are **configured** in `secrets.toml`. Booking "
+        "confirmation emails are being sent automatically."
+    )
+else:
+    st.warning(
+        "SMTP credentials are **not configured**. Booking emails will be "
+        "skipped until you add the `[smtp]` block to your Streamlit "
+        "secrets. Setup walkthrough below."
+    )
+
+with st.expander("Send a test email"):
+    st.caption(
+        "Sends a single 'this is a test' email to the address you enter. "
+        "Useful for verifying SMTP is reachable before relying on it for "
+        "real customers."
+    )
+    test_email_addr = st.text_input(
+        "Email address to test",
+        value="",
+        placeholder="you@example.com",
+        key="smtp_test_email",
+        max_chars=120,
+    )
+    if st.button(
+        "Send test email",
+        key="smtp_test_btn",
+        use_container_width=True,
+        disabled=not email_ready,
+    ):
+        ok, reason = send_test_email(to_email=test_email_addr)
+        if ok:
+            st.success(reason)
+        else:
+            st.error(reason)
+
+with st.expander("SMTP setup \u2014 step by step"):
+    st.markdown(
+        """
+        **Step 1 \u2014 Pick an SMTP provider.**
+
+        - **Gmail** is the simplest if your shop already has a Google
+          account. Free, but you must generate an App Password (regular
+          Google passwords are blocked from SMTP):
+          https://myaccount.google.com/apppasswords
+        - **Brevo** (formerly Sendinblue) is free up to 300 emails/day
+          and gives proper SMTP credentials at
+          https://app.brevo.com/settings/keys/smtp
+        - **Mailgun**, **SendGrid**, or your own ISP also work \u2014 anything
+          that speaks plain SMTP.
+
+        **Step 2 \u2014 Add credentials to your Streamlit secrets.**
+
+        For Streamlit Community Cloud: **Manage app \u2192 Settings \u2192 Secrets**.
+        For local dev: `.streamlit/secrets.toml`.
+
+        ```toml
+        [smtp]
+        host        = "smtp.gmail.com"
+        port        = 587
+        username    = "yourshop@gmail.com"
+        password    = "<app-specific password>"   # NOT your Google password
+        from_email  = "yourshop@gmail.com"
+        from_name   = "Click2Serve Bharatpur"
+        use_tls     = true
+        ```
+
+        **Step 3 \u2014 Verify with the test button above.**
+
+        After saving the secrets, the app reboots automatically (~30s).
+        Refresh this page, expand 'Send a test email', enter your own
+        email, and click the button. You should receive the test in 5\u201310s.
+
+        **Step 4 \u2014 You're done.**
+
+        Every new booking now triggers an email automatically. Failures
+        are logged but never block the booking itself \u2014 if the SMTP
+        provider is down, the customer still gets their token on screen
+        (and via WhatsApp if Twilio / wa.me are wired up).
+
+        ---
+
+        **Common errors:**
+        - *Authentication failed* \u2014 wrong password. For Gmail, must be an
+          App Password, not the account password.
+        - *Connection refused* \u2014 wrong host or port. Gmail uses 587
+          (TLS) or 465 (SSL). Set `port = 465` and the module switches
+          to SMTPS automatically.
+        - *Sender address rejected* \u2014 some providers (e.g. Mailgun)
+          require `from_email` to be a verified domain.
+        """
+    )
+
+
 # ── Section 06 — Local SEO & Google Maps (NEW) ───────────────────────────
-# Captures the data Google needs to surface the shop in Maps results
-# with a working "Book Now" button. Pure metadata; no destructive action.
 st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
 st.markdown(
     "<div class='c2s-cat'>Section 06</div>"
