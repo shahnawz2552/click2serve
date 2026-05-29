@@ -527,3 +527,96 @@ def send_twilio_test(*, phone: str) -> tuple[bool, str]:
             "in Settings."
         ),
     )
+
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Booking-confirmation messages (separate from status-change templates)
+# ──────────────────────────────────────────────────────────────────────────
+# Status-change templates are about transitions (Pending -> Ready). The
+# booking-confirmation message is the *first* message a customer sees,
+# right after they hit Submit. It carries the booking token, service
+# name, fee, and ETA so they have everything they need on their phone
+# without re-opening the app.
+def customer_booking_confirmation_message(
+    *,
+    customer_name: str,
+    token: str,
+    service_name: str,
+    total_fee: int,
+    eta_hours: int,
+    shop_name: str | None = None,
+) -> str:
+    """Build the WhatsApp/SMS-friendly confirmation text. Always returns a string."""
+    first_name = (customer_name or "").strip().split()[:1]
+    greeting = first_name[0] if first_name else "there"
+    shop = (shop_name or _shop_name()).strip() or "Click2Serve"
+    return (
+        f"Hi {greeting}, your booking at *{shop}* is confirmed.\n"
+        f"\n"
+        f"Booking number: *{token}*\n"
+        f"Service: {service_name}\n"
+        f"Total: \u20b9{total_fee}\n"
+        f"Ready in ~{eta_hours} hours\n"
+        f"\n"
+        f"Save this number \u2014 you'll need it (with your mobile) to "
+        f"track or pay online."
+    )
+
+
+def notify_customer_booking_confirmation_twilio(
+    *,
+    customer_phone: str,
+    customer_name: str,
+    token: str,
+    service_name: str,
+    total_fee: int,
+    eta_hours: int,
+) -> tuple[bool, str]:
+    """Send the booking-confirmation message via Twilio. Always safe to call.
+
+    Short-circuits with ``(False, reason)`` when:
+      - the Twilio toggle is off in Settings,
+      - credentials aren't in secrets.toml, or
+      - customer_phone is empty.
+    Callers should always also surface the wa.me click-to-chat link as
+    a fallback regardless of what this returns.
+    """
+    if not _twilio_enabled():
+        return False, "Twilio auto-send is disabled in Settings"
+    if not is_twilio_configured():
+        return False, "Twilio credentials not configured in secrets.toml"
+    if not (customer_phone or "").strip():
+        return False, "Customer has no phone on file"
+
+    msg = customer_booking_confirmation_message(
+        customer_name=customer_name, token=token,
+        service_name=service_name, total_fee=total_fee,
+        eta_hours=eta_hours,
+    )
+    return _send_via_twilio(to_phone=customer_phone, message=msg)
+
+
+def customer_booking_confirmation_chat_url(
+    *,
+    customer_phone: str,
+    customer_name: str,
+    token: str,
+    service_name: str,
+    total_fee: int,
+    eta_hours: int,
+) -> str:
+    """Return a wa.me click-to-chat URL pre-filled with the confirmation.
+
+    Lets the OWNER tap once to send the customer the confirmation from
+    their own WhatsApp when Twilio isn't configured (or fails). Empty
+    string when the phone can't be normalised.
+    """
+    msg = customer_booking_confirmation_message(
+        customer_name=customer_name, token=token,
+        service_name=service_name, total_fee=total_fee,
+        eta_hours=eta_hours,
+    )
+    return customer_whatsapp_chat_url(
+        customer_phone=customer_phone, message=msg,
+    )

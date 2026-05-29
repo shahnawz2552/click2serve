@@ -20,10 +20,15 @@ import re
 
 import streamlit as st
 
-from core.db import create_booking, list_services, save_document
+from core.db import create_booking, get_shop_config, list_services, save_document
 from core.document_checker import (
     aspect_ratio_for_category, check_document,
     expected_document_type_for_service, render_report_html,
+)
+from core.email_sender import send_booking_email
+from core.notifications import (
+    customer_booking_confirmation_chat_url,
+    notify_customer_booking_confirmation_twilio,
 )
 from core.styles import (
     BORDER, INK, MUTED, PRIMARY, category_badge, inject_global_css,
@@ -294,6 +299,105 @@ if submitted:
         ),
         unsafe_allow_html=True,
     )
+
+    # ── Send the booking number to the customer's phone + email ─────
+    # Three best-effort channels, all non-blocking. The booking row is
+    # already committed at this point, so any messaging failure here
+    # never undoes the booking — we just surface what worked / what
+    # didn't on the page so the owner can follow up if needed.
+    confirmations: list[str] = []
+    failures: list[str] = []
+    shop_cfg = get_shop_config() or {}
+    shop_display_name = (
+        (shop_cfg.get("shop_name") or "").strip() or "Click2Serve"
+    )
+    business_url = (shop_cfg.get("business_url") or "").strip()
+    track_url = f"{business_url}/track" if business_url else None
+    pay_url = f"{business_url}/pay" if business_url else None
+
+    # 1. WhatsApp via Twilio (auto, paid) — only fires when toggle is on.
+    try:
+        ok_wa, reason_wa = notify_customer_booking_confirmation_twilio(
+            customer_phone=phone,
+            customer_name=name,
+            token=token,
+            service_name=service["name"],
+            total_fee=total_fee,
+            eta_hours=int(service["eta_hours"] or 0),
+        )
+    except Exception as exc:  # noqa: BLE001
+        ok_wa, reason_wa = False, f"unexpected: {exc}"
+    if ok_wa:
+        confirmations.append("📲 WhatsApp sent to your phone")
+    elif reason_wa and not (
+        "disabled" in reason_wa or "not configured" in reason_wa
+    ):
+        # Surface real Twilio failures but stay quiet for the
+        # 'toggle off / no creds' cases — those are normal here.
+        failures.append(f"WhatsApp: {reason_wa}")
+
+    # 2. Email confirmation (auto when configured + customer gave email)
+    if email:
+        try:
+            ok_em, reason_em = send_booking_email(
+                to_email=email,
+                customer_name=name,
+                token=token,
+                service_name=service["name"],
+                total_fee=total_fee,
+                eta_hours=int(service["eta_hours"] or 0),
+                shop_name=shop_display_name,
+                track_url=track_url,
+                pay_url=pay_url,
+            )
+        except Exception as exc:  # noqa: BLE001
+            ok_em, reason_em = False, f"unexpected: {exc}"
+        if ok_em:
+            confirmations.append(f"📧 Email sent to {email}")
+        elif "not configured" in (reason_em or ""):
+            # Owner hasn't set up SMTP — silent (covered by Settings tip).
+            pass
+        else:
+            failures.append(f"Email: {reason_em}")
+
+    # 3. Always-available wa.me click-to-chat link — works for ANY phone
+    # without API setup. Lands the message into WhatsApp on the
+    # customer's device pre-filled, ready to send.
+    chat_url = customer_booking_confirmation_chat_url(
+        customer_phone=phone,
+        customer_name=name,
+        token=token,
+        service_name=service["name"],
+        total_fee=total_fee,
+        eta_hours=int(service["eta_hours"] or 0),
+    )
+
+    if confirmations:
+        st.markdown(
+            "<div style='height:0.6rem;'></div>", unsafe_allow_html=True,
+        )
+        st.success("Confirmation sent — " + " · ".join(confirmations))
+    if failures:
+        with st.expander("Some confirmations could not be sent"):
+            for f in failures:
+                st.warning(f)
+            st.caption(
+                "Your booking is saved either way. Use the WhatsApp button "
+                "below if you want a copy on your phone right now."
+            )
+
+    # Always offer the manual WhatsApp send — works regardless of Twilio
+    # / SMTP configuration. One tap opens WhatsApp on the customer's
+    # device with the message ready to send.
+    if chat_url:
+        st.markdown(
+            "<div style='height:0.4rem;'></div>", unsafe_allow_html=True,
+        )
+        st.link_button(
+            f"📲 Send my booking number to WhatsApp ({phone})",
+            chat_url,
+            use_container_width=True,
+        )
 
     # Pre-fill the pay/track pages with this token
     st.session_state["pay_token"] = token
