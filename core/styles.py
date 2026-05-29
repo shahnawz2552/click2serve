@@ -505,6 +505,316 @@ section[data-testid="stSidebar"] > div:first-child {{
 /* Stagger fade-in for grid items */
 .c2s-fade-in {{ animation: c2sFadeUp 0.45s ease both; }}
 
+/* ────────────────────────────────────────────────────────────────── */
+/*  3D + DYNAMIC LAYER (added in style/3d-dynamic-upgrade)           */
+/*  Pure CSS, zero JS deps. All effects respect prefers-reduced-     */
+/*  motion via the global @media query at the bottom of this block. */
+/* ────────────────────────────────────────────────────────────────── */
+
+/* 1. Animated mesh-gradient backdrop on the hero ─────────────────── */
+.c2s-hero {{
+    /* Override the static gradient from the base block above. */
+    background:
+        radial-gradient(at 20% 10%,  rgba(37, 99, 235, 0.22) 0%, transparent 50%),
+        radial-gradient(at 100% 0%,  rgba(245, 158, 11, 0.20) 0%, transparent 50%),
+        radial-gradient(at 80% 100%, rgba(99, 102, 241, 0.20) 0%, transparent 50%),
+        radial-gradient(at 0% 100%,  rgba(16, 185, 129, 0.14) 0%, transparent 55%),
+        linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%);
+    background-size: 200% 200%;
+    animation: c2sMeshDrift 14s ease-in-out infinite alternate;
+}}
+@keyframes c2sMeshDrift {{
+    0%   {{ background-position: 0% 50%; }}
+    50%  {{ background-position: 100% 50%; }}
+    100% {{ background-position: 0% 50%; }}
+}}
+
+/* 2. Floating sheen + subtle parallax pulse on the hero ──────────── */
+.c2s-hero::after {{
+    content: "";
+    position: absolute;
+    top: -40%; left: -20%;
+    width: 60%; height: 200%;
+    background: linear-gradient(
+        110deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.6) 50%,
+        transparent 70%
+    );
+    transform: rotate(20deg);
+    animation: c2sSheen 9s ease-in-out infinite;
+    pointer-events: none;
+    opacity: 0.25;
+}}
+@keyframes c2sSheen {{
+    0%, 100% {{ transform: translateX(-30%) rotate(20deg); }}
+    50%      {{ transform: translateX(180%) rotate(20deg); }}
+}}
+
+/* 3. 3D tilt on cards ─────────────────────────────────────────────── */
+/* Service-card containers and KPI tiles tip very slightly toward the
+   cursor on hover. ``perspective`` is on the parent so individual
+   children rotate convincingly. */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+    transform-style: preserve-3d;
+    perspective: 900px;
+    will-change: transform, box-shadow;
+}}
+div[data-testid="stVerticalBlockBorderWrapper"]:hover {{
+    transform:
+        translateY(-3px)
+        rotateX(1.5deg)
+        rotateY(-1.5deg)
+        scale(1.012);
+    box-shadow:
+        0 20px 40px -16px rgba(15, 23, 42, 0.12),
+        0 8px 20px rgba(15, 23, 42, 0.06);
+}}
+
+/* 4. Glassmorphic stat tiles on the hero ─────────────────────────── */
+.c2s-stat {{
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.7),
+        0 4px 16px rgba(15, 23, 42, 0.04);
+    transform: translateZ(0);
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+                box-shadow 0.25s ease;
+}}
+.c2s-stat:hover {{
+    transform: translateY(-4px) scale(1.04);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.7),
+        0 14px 28px -8px rgba(15, 23, 42, 0.18);
+}}
+
+/* 5. Shimmer sweep on primary buttons ─────────────────────────────── */
+.stButton > button[kind="primary"],
+.stFormSubmitButton > button[kind="primary"],
+.stDownloadButton > button[kind="primary"] {{
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}}
+.stButton > button[kind="primary"]::after,
+.stFormSubmitButton > button[kind="primary"]::after,
+.stDownloadButton > button[kind="primary"]::after {{
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        110deg,
+        transparent 35%,
+        rgba(255, 255, 255, 0.45) 50%,
+        transparent 65%
+    );
+    transform: translateX(-110%);
+    transition: transform 0.65s ease;
+    pointer-events: none;
+}}
+.stButton > button[kind="primary"]:hover::after,
+.stFormSubmitButton > button[kind="primary"]:hover::after,
+.stDownloadButton > button[kind="primary"]:hover::after {{
+    transform: translateX(110%);
+}}
+
+/* 6. Pulsing ring + slight bob on the hero pulse-dot ─────────────── */
+.c2s-hero-eyebrow .dot {{
+    /* Replaces the simpler keyframe in the base block. */
+    animation: c2sPulse 1.6s ease-out infinite, c2sBob 3.2s ease-in-out infinite;
+}}
+@keyframes c2sBob {{
+    0%, 100% {{ transform: translateY(0); }}
+    50%      {{ transform: translateY(-1px); }}
+}}
+
+/* 7. Animated underline on H2s when they enter the viewport ──────── */
+h2 {{
+    position: relative;
+    display: inline-block;
+    padding-bottom: 0.18rem;
+}}
+h2::after {{
+    content: "";
+    position: absolute;
+    left: 0; bottom: 0;
+    width: 0;
+    height: 2px;
+    background: linear-gradient(90deg, {PRIMARY} 0%, {ACCENT} 100%);
+    border-radius: 2px;
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}}
+.c2s-revealed h2::after,
+h2.c2s-revealed::after {{
+    width: 100%;
+}}
+
+/* 8. Scroll-reveal base + revealed states ─────────────────────────── */
+.c2s-reveal {{
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}}
+.c2s-revealed.c2s-reveal,
+.c2s-revealed .c2s-reveal {{
+    opacity: 1;
+    transform: translateY(0);
+}}
+
+/* 9. Status badges get a subtle pulsing ring when 'live' (Pending /
+       In Progress on the bookings detail panel) ─────────────────── */
+.c2s-pill[data-live="1"] {{
+    box-shadow: 0 0 0 0 currentColor;
+    animation: c2sPillPulse 2s ease-out infinite;
+}}
+@keyframes c2sPillPulse {{
+    0%   {{ box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45); }}
+    70%  {{ box-shadow: 0 0 0 8px rgba(37, 99, 235, 0); }}
+    100% {{ box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }}
+}}
+
+/* 10. Animated SVG check on success token ─────────────────────────── */
+.c2s-check-svg {{
+    width: 28px; height: 28px;
+    stroke: {SUCCESS};
+    stroke-width: 3;
+    stroke-linecap: round;
+    fill: none;
+    overflow: visible;
+}}
+.c2s-check-svg circle {{
+    stroke-dasharray: 166;
+    stroke-dashoffset: 166;
+    animation: c2sStrokeIn 0.6s 0.1s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+}}
+.c2s-check-svg path {{
+    stroke-dasharray: 48;
+    stroke-dashoffset: 48;
+    animation: c2sStrokeIn 0.4s 0.55s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+}}
+@keyframes c2sStrokeIn {{
+    to {{ stroke-dashoffset: 0; }}
+}}
+
+/* 11. Subtle SVG noise texture overlay on the hero (premium feel) ── */
+.c2s-hero::before {{
+    /* Layered on top of the existing dot grid from the base block. */
+    background-image:
+        radial-gradient(circle, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0   0 0 0 0 0   0 0 0 0 0   0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    background-size: 22px 22px, 160px 160px;
+    background-blend-mode: multiply;
+    opacity: 0.6;
+}}
+
+/* 12. Animated focus ring on inputs (replaces base block's static
+       2px shadow with a soft expand-and-fade) ─────────────────── */
+.stTextInput > div > div:focus-within,
+.stNumberInput > div:focus-within,
+.stSelectbox > div > div:focus-within {{
+    border-color: {PRIMARY} !important;
+    box-shadow:
+        0 0 0 4px rgba(37, 99, 235, 0.16),
+        0 0 0 1px {PRIMARY} inset;
+    animation: c2sFocusBloom 0.4s ease;
+}}
+@keyframes c2sFocusBloom {{
+    0%   {{ box-shadow: 0 0 0 0   rgba(37, 99, 235, 0.30),
+                       0 0 0 1px {PRIMARY} inset; }}
+    50%  {{ box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.20),
+                       0 0 0 1px {PRIMARY} inset; }}
+    100% {{ box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16),
+                       0 0 0 1px {PRIMARY} inset; }}
+}}
+
+/* 13. Floating action button — bottom-right "Book a service" pill
+       on every customer page (hidden on /book itself via JS class) */
+.c2s-fab {{
+    position: fixed;
+    right: 1.2rem;
+    bottom: 1.2rem;
+    z-index: 999;
+    background: linear-gradient(135deg, {PRIMARY} 0%, {PRIMARY_DARK} 100%);
+    color: #FFFFFF !important;
+    text-decoration: none;
+    padding: 0.85rem 1.3rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.92rem;
+    letter-spacing: -0.005em;
+    box-shadow:
+        0 12px 28px -6px rgba(37, 99, 235, 0.55),
+        0 6px 14px rgba(37, 99, 235, 0.25);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transform: translateY(0);
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+                box-shadow 0.25s ease;
+    animation: c2sFabIn 0.6s 0.3s ease both;
+}}
+.c2s-fab:hover {{
+    transform: translateY(-3px) scale(1.04);
+    box-shadow:
+        0 18px 36px -6px rgba(37, 99, 235, 0.55),
+        0 8px 18px rgba(37, 99, 235, 0.30);
+}}
+.c2s-fab .arrow {{
+    display: inline-block;
+    transition: transform 0.25s ease;
+}}
+.c2s-fab:hover .arrow {{ transform: translateX(3px); }}
+@keyframes c2sFabIn {{
+    from {{ opacity: 0; transform: translateY(20px) scale(0.9); }}
+    to   {{ opacity: 1; transform: translateY(0)    scale(1); }}
+}}
+
+/* 14. Service-card image ribbon: keep the 3px stripe but animate its
+       glow on hover so the card feels charged. */
+.c2s-service-card .accent-bar {{
+    box-shadow: 0 0 0 0 currentColor;
+    transition: box-shadow 0.3s ease;
+}}
+div[data-testid="stVerticalBlockBorderWrapper"]:hover .accent-bar {{
+    box-shadow: 0 4px 14px -2px rgba(37, 99, 235, 0.35);
+}}
+
+/* 15. Sidebar nav links — soft slide-in highlight on hover ───────── */
+a[data-testid="stPageLink-NavLink"] {{
+    position: relative;
+    overflow: hidden;
+}}
+a[data-testid="stPageLink-NavLink"]::before {{
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, {PRIMARY} 0%, {ACCENT} 100%);
+    transform: scaleY(0);
+    transform-origin: top;
+    transition: transform 0.3s ease;
+    border-radius: 0 3px 3px 0;
+}}
+a[data-testid="stPageLink-NavLink"]:hover::before {{
+    transform: scaleY(1);
+}}
+
+/* 16. Reduced-motion safety net ──────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {{
+    *, *::before, *::after {{
+        animation-duration: 0.001s !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001s !important;
+        scroll-behavior: auto !important;
+    }}
+    .c2s-hero, .c2s-hero::before, .c2s-hero::after {{
+        animation: none !important;
+    }}
+}}
+
 /* ── Mobile breakpoint ─────────────────────────────────────────── */
 @media (max-width: 640px) {{
     section.main > div.block-container {{
@@ -832,14 +1142,26 @@ def success_token_card(token: str, total_fee: int, eta_hours: int,
         f'<div style="margin-top:0.8rem; color:{SUCCESS_TEXT}; font-size:'
         f'0.88rem;">{extra_note}</div>'
     ) if extra_note else ""
+    # Animated SVG check that draws itself on render — defined by
+    # .c2s-check-svg / @keyframes c2sStrokeIn in the global stylesheet.
+    check = (
+        '<svg class="c2s-check-svg" viewBox="0 0 56 56" '
+        'width="34" height="34" aria-hidden="true">'
+        '<circle cx="28" cy="28" r="26"/>'
+        '<path d="M16 29 L25 38 L41 19"/>'
+        '</svg>'
+    )
     return (
-        f'<div style="background:linear-gradient(180deg, {SUCCESS_BG} 0%, '
+        f'<div class="c2s-reveal" '
+        f'style="background:linear-gradient(180deg, {SUCCESS_BG} 0%, '
         f'#ECFDF5 100%); border:1px solid {SUCCESS}; border-radius:14px; '
         f'padding:1.4rem; box-shadow:0 4px 16px rgba(22,163,74,0.10);">'
+        f'<div style="display:flex; align-items:center; gap:0.7rem; '
+        f'margin-bottom:0.4rem;">{check}'
         f'<div style="font-size:0.74rem; font-weight:700; color:{SUCCESS_TEXT}; '
         f'text-transform:uppercase; letter-spacing:0.08em;">'
-        f'Booking confirmed</div>'
-        f'<div class="c2s-token" style="margin-top:0.4rem;">{token}</div>'
+        f'Booking confirmed</div></div>'
+        f'<div class="c2s-token" style="margin-top:0.2rem;">{token}</div>'
         f'<div style="color:{SUCCESS_TEXT}; font-size:0.9rem; margin-top:'
         f'0.6rem;">Save this token to track your booking.</div>'
         f'<div style="display:flex; gap:1.2rem; margin-top:0.9rem; '
@@ -918,3 +1240,114 @@ def cta_banner(eyebrow: str, title_html: str, subtitle: str) -> None:
         f'</div>',
         unsafe_allow_html=True,
     )
+
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# 3D + dynamic helpers (added in style/3d-dynamic-upgrade)
+# ──────────────────────────────────────────────────────────────────────────
+# These ride on top of the CSS layer above. They're optional from the page's
+# point of view — pages that don't call them just get the CSS effects (mesh
+# gradient, hero sheen, card 3D tilt, button shimmer, sidebar slide-in
+# highlight). The helpers below add the bits that need an HTML payload
+# (animated SVG check, scroll-reveal observer, floating "Book" pill).
+
+# Tiny IntersectionObserver script that adds .c2s-revealed when an element
+# scrolls into view. Idempotent — guarded by session_state so we only inject
+# the script tag once per Streamlit run.
+_SCROLL_REVEAL_JS = """
+<script>
+(function () {
+  if (window.__c2sRevealReady) return;
+  window.__c2sRevealReady = true;
+  function init() {
+    var els = document.querySelectorAll('.c2s-reveal, h2');
+    if (!('IntersectionObserver' in window)) {
+      // Fallback: just reveal everything immediately.
+      els.forEach(function (el) { el.classList.add('c2s-revealed'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          e.target.classList.add('c2s-revealed');
+          io.unobserve(e.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 });
+    els.forEach(function (el) { io.observe(el); });
+  }
+  // Streamlit re-renders the DOM frequently; rerun the observer attach on
+  // each animation frame for a short window to catch newly-mounted nodes.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+  // Re-attach on Streamlit's mutation pulses for the first 8 seconds.
+  var startedAt = Date.now();
+  var observer = new MutationObserver(function () {
+    if (Date.now() - startedAt > 8000) { observer.disconnect(); return; }
+    init();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+"""
+
+
+def inject_scroll_reveal() -> None:
+    """Drop the IntersectionObserver script once per page.
+
+    Call this from any page that wants ``.c2s-reveal`` elements (and H2s,
+    which are auto-targeted) to fade up as they scroll into view.
+    """
+    if st.session_state.get("_c2s_scroll_reveal_injected"):
+        return
+    st.markdown(_SCROLL_REVEAL_JS, unsafe_allow_html=True)
+    st.session_state["_c2s_scroll_reveal_injected"] = True
+
+
+def animated_check_svg(*, size: int = 28) -> str:
+    """Inline SVG of a stroked check mark inside a circle.
+
+    The SVG draws itself with a stroke-dashoffset animation defined in the
+    global stylesheet (``.c2s-check-svg``). Use it on the success token
+    card or anywhere a "completed" feel matters.
+    """
+    return (
+        f'<svg class="c2s-check-svg" viewBox="0 0 56 56" '
+        f'width="{size}" height="{size}" aria-hidden="true">'
+        f'<circle cx="28" cy="28" r="26"/>'
+        f'<path d="M16 29 L25 38 L41 19"/>'
+        f'</svg>'
+    )
+
+
+def floating_book_button(
+    *, label: str = "Book a service", target: str = "/book",
+) -> None:
+    """Render a fixed-position pill at bottom-right that links to /book.
+
+    Hidden via the ``data-c2s-fab-hide`` attribute on the html tag if a
+    page wants to suppress it (e.g. the booking page itself shouldn't
+    show a 'Go to booking' shortcut).
+    """
+    # Skip when explicitly suppressed for this page.
+    if st.session_state.get("_c2s_fab_suppress"):
+        return
+    if st.session_state.get("_c2s_fab_rendered"):
+        return
+    arrow = '<span class="arrow">→</span>'
+    st.markdown(
+        f'<a class="c2s-fab" href="{target}" target="_self">'
+        f'<span>📝</span><span>{label}</span>{arrow}'
+        f'</a>',
+        unsafe_allow_html=True,
+    )
+    st.session_state["_c2s_fab_rendered"] = True
+
+
+def suppress_floating_book_button() -> None:
+    """Call from /book or owner pages so the FAB stays hidden."""
+    st.session_state["_c2s_fab_suppress"] = True

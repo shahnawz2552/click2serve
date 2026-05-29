@@ -14,7 +14,8 @@ import streamlit as st
 from core.db import init_db
 from core.seo import google_traffic_banner, inject_local_business_jsonld
 from core.styles import (
-    BORDER, INK, MUTED, PRIMARY, PRIMARY_TINT, SURFACE, inject_global_css,
+    BORDER, INK, MUTED, PRIMARY, PRIMARY_TINT, SURFACE,
+    inject_global_css, inject_scroll_reveal,
 )
 
 # ── Bootstrap database on first request (Supabase) ──────────────────────────
@@ -35,6 +36,9 @@ st.set_page_config(
 
 # ── Apply the global stylesheet to every page ───────────────────────────────
 inject_global_css()
+
+# ── Scroll-reveal observer (fades up H2s and .c2s-reveal blocks on entry) ──
+inject_scroll_reveal()
 
 # ── Local business structured data — drives the Google Maps "Book Now" button.
 # Emitted on every page so any URL the shop shares (root, /book, /contact)

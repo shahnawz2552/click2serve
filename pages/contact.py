@@ -13,7 +13,7 @@ import streamlit as st
 from core.db import get_shop_config
 from core.styles import (
     BORDER, INK, MUTED, PRIMARY, PRIMARY_TINT, SURFACE,
-    inject_global_css, section_header,
+    floating_book_button, inject_global_css, section_header,
 )
 
 inject_global_css()
@@ -231,3 +231,8 @@ with st.expander("Can I cancel a booking?"):
         "and we'll process it. Refunds (if any) follow your UPI app's "
         "usual reversal timing."
     )
+
+
+
+if not st.session_state.get("logged_in"):
+    floating_book_button()

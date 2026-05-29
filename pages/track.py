@@ -13,7 +13,8 @@ from core.db import (
     signed_document_url,
 )
 from core.styles import (
-    BORDER, INK, MUTED, PRIMARY, SURFACE, inject_global_css, payment_badge,
+    BORDER, INK, MUTED, PRIMARY, SURFACE, floating_book_button,
+    inject_global_css, payment_badge,
     section_header, status_badge, status_timeline,
 )
 
@@ -282,3 +283,8 @@ with tab_all:
             "<b>Look up a token</b> tab above.</p>",
             unsafe_allow_html=True,
         )
+
+
+
+if not st.session_state.get("logged_in"):
+    floating_book_button()
