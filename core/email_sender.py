@@ -74,6 +74,72 @@ def _build_from_header() -> str:
     return formataddr((name, addr))
 
 
+def _auth_failure_message(host: str, raw_exc: Exception | None = None) -> str:
+    """Return a provider-specific 'auth failed' message based on the host.
+
+    The previous implementation always referenced Gmail App Passwords,
+    which was misleading when the user was actually configured for
+    Brevo / Mailgun / SendGrid / etc. This dispatches off the SMTP host
+    so the customer-visible error matches what they actually need to
+    fix.
+    """
+    h = (host or "").lower()
+    detail = ""
+    if raw_exc is not None:
+        # Surface the underlying SMTP code/message so users (and us) can
+        # debug from logs alone. Truncated to keep the toast readable.
+        detail = f" (server said: {str(raw_exc)[:140]})"
+
+    if "gmail" in h or "google" in h:
+        return (
+            "Gmail SMTP rejected the credentials. The password must be "
+            "an App Password (16 chars, generated at "
+            "https://myaccount.google.com/apppasswords) — your normal "
+            "Google account password will NOT work."
+            + detail
+        )
+    if "brevo" in h or "sendinblue" in h:
+        return (
+            "Brevo rejected the credentials. Check that:"
+            "\n  1. `username` is the EMAIL you signed up with at Brevo"
+            " (NOT the literal text 'apikey')."
+            "\n  2. `password` is your Brevo SMTP key (from "
+            "https://app.brevo.com/settings/keys/smtp — NOT the API key"
+            " from the API tab)."
+            "\n  3. Your Brevo account's signup email is verified."
+            + detail
+        )
+    if "mailgun" in h:
+        return (
+            "Mailgun rejected the credentials. `username` should be the "
+            "SMTP login from your domain settings (postmaster@yourdomain "
+            "or similar), and `password` should be the SMTP password "
+            "from the Mailgun dashboard — NOT the API key."
+            + detail
+        )
+    if "sendgrid" in h:
+        return (
+            "SendGrid rejected the credentials. `username` must be "
+            "literally the string 'apikey', and `password` must be a "
+            "SendGrid API key with the 'Mail Send' permission."
+            + detail
+        )
+    if "amazonaws" in h or "ses" in h:
+        return (
+            "AWS SES rejected the credentials. Use the SMTP-specific "
+            "username/password generated under SES → SMTP settings — "
+            "your IAM access key won't work as-is."
+            + detail
+        )
+    return (
+        "SMTP authentication failed. Re-check the username and password "
+        "in your Streamlit secrets — the value of `password` must be the "
+        "SMTP-specific credential from your provider's dashboard, not "
+        "your account login password."
+        + detail
+    )
+
+
 def send_booking_email(
     *,
     to_email: str,
@@ -172,11 +238,7 @@ def send_booking_email(
                 smtp.send_message(msg)
     except smtplib.SMTPAuthenticationError as exc:
         logger.warning("SMTP auth failed for %s: %s", host, exc)
-        return False, (
-            "SMTP authentication failed — most likely an invalid app "
-            "password. For Gmail, generate one at "
-            "https://myaccount.google.com/apppasswords"
-        )
+        return False, _auth_failure_message(host, exc)
     except smtplib.SMTPException as exc:
         logger.warning("SMTP error sending to %s: %s", to_email, exc)
         return False, f"SMTP error: {exc}"
@@ -236,12 +298,8 @@ def send_test_email(*, to_email: str) -> tuple[bool, str]:
                     smtp.ehlo()
                 smtp.login(username, password)
                 smtp.send_message(msg)
-    except smtplib.SMTPAuthenticationError:
-        return False, (
-            "SMTP authentication failed. For Gmail, generate an "
-            "app-specific password at "
-            "https://myaccount.google.com/apppasswords"
-        )
+    except smtplib.SMTPAuthenticationError as exc:
+        return False, _auth_failure_message(host, exc)
     except Exception as exc:  # noqa: BLE001
         return False, f"Could not send test email: {exc}"
 
