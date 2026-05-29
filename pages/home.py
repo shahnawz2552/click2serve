@@ -6,7 +6,7 @@ import streamlit as st
 from core.db import list_categories, list_services
 from core.styles import (
     BORDER, INK, MUTED, PRIMARY, SURFACE, category_accent, category_badge,
-    hero_block, inject_global_css, trust_badge,
+    floating_book_button, hero_block, inject_global_css, trust_badge,
 )
 
 inject_global_css()
@@ -199,3 +199,10 @@ if not st.session_state.get("logged_in"):
             f"margin-top:0.3rem;'>Customers don't need to sign in.</div>",
             unsafe_allow_html=True,
         )
+
+
+
+# Floating "Book a service" pill — shown only when the user isn't an owner.
+# Renders fixed bottom-right; gracefully styled via .c2s-fab in styles.py.
+if not st.session_state.get("logged_in"):
+    floating_book_button()

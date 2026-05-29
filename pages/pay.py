@@ -14,7 +14,7 @@ from core.payments import (
     is_valid_vpa,
     qr_svg,
 )
-from core.styles import inject_global_css, section_header
+from core.styles import floating_book_button, inject_global_css, section_header
 
 inject_global_css()
 
@@ -262,3 +262,8 @@ if submit:
     st.balloons()
     # Clear pre-fill so a refresh shows the awaiting-verification banner
     st.rerun()
+
+
+
+if not st.session_state.get("logged_in"):
+    floating_book_button()
