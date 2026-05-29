@@ -12,9 +12,9 @@ import pandas as pd
 import streamlit as st
 
 from core.db import (
-    PAYMENT_METHODS, STATUSES, list_bookings, list_documents,
-    reject_payment, update_booking_payment, update_booking_status,
-    verify_payment,
+    PAYMENT_METHODS, STATUSES, delete_booking, list_bookings,
+    list_documents, reject_payment, update_booking_payment,
+    update_booking_status, verify_payment,
 )
 from core.notifications import (
     customer_status_message,
@@ -371,4 +371,65 @@ with st.container(border=True):
             amount=int(new_amount),
         )
         st.success("Payment updated.")
+        st.rerun()
+
+
+# ── Danger zone — delete this single booking ───────────────────────────────
+# Two-step: clicking 'Delete this booking' arms a confirmation, second
+# click actually performs the delete. State is keyed by booking id so
+# arming one booking doesn't bleed into another after rerun.
+booking_id = _g(booking, "id")
+arm_key = f"_arm_delete_{booking_id}"
+
+st.markdown("<hr class='c2s-rule' style='margin:1.6rem 0 1rem;'/>",
+            unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat' style='color:#B91C1C;'>Danger zone</div>",
+    unsafe_allow_html=True,
+)
+
+if not st.session_state.get(arm_key):
+    if st.button(
+        "Delete this booking…",
+        key=f"del_arm_{booking_id}",
+        use_container_width=True,
+    ):
+        st.session_state[arm_key] = True
+        st.rerun()
+    st.caption(
+        "Permanently removes the booking and any uploaded documents from "
+        "Supabase Storage. Cannot be undone."
+    )
+else:
+    st.warning(
+        f"This will permanently delete booking **{_g(booking, 'token', '—')}** "
+        f"({_g(booking, 'customer_name', '—')}) and any attached documents. "
+        f"There is no undo."
+    )
+    cd1, cd2 = st.columns(2)
+    if cd1.button(
+        "Yes, delete permanently",
+        key=f"del_go_{booking_id}",
+        use_container_width=True,
+        type="primary",
+    ):
+        try:
+            removed = delete_booking(booking_id)
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not delete booking: {exc}")
+        else:
+            st.session_state.pop(arm_key, None)
+            if removed:
+                st.success(
+                    f"Booking {_g(booking, 'token', '—')} deleted."
+                )
+            else:
+                st.info("Booking was already gone.")
+            st.rerun()
+    if cd2.button(
+        "Cancel",
+        key=f"del_no_{booking_id}",
+        use_container_width=True,
+    ):
+        st.session_state.pop(arm_key, None)
         st.rerun()
