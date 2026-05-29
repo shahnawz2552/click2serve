@@ -13,8 +13,8 @@ import streamlit as st
 
 from core.db import (
     PAYMENT_METHODS, STATUSES, list_bookings, list_documents,
-    reject_payment, update_booking_payment, update_booking_status,
-    verify_payment,
+    reject_payment, signed_document_url, update_booking_payment,
+    update_booking_status, verify_payment,
 )
 from core.notifications import (
     customer_status_message,
@@ -186,15 +186,67 @@ with st.container(border=True):
     if docs:
         st.markdown(
             "<div class='c2s-cat' style='margin-top:0.8rem;'>"
-            "Attached documents</div>",
+            f"Attached documents <span style='color:#94A3B8; "
+            f"font-weight:500; text-transform:none; letter-spacing:0;'>"
+            f"({len(docs)})</span></div>",
             unsafe_allow_html=True,
         )
+
+        # Render each attachment as a card. For images (jpg/png/webp), we
+        # show an inline preview using a short-lived signed URL from
+        # Supabase Storage. For PDFs / other types we show a clickable
+        # "Open file" link that opens in a new tab. Signed URLs are
+        # valid for 10 minutes by default — long enough for the owner
+        # to look at the document, short enough that a leaked link
+        # isn't a privacy disaster.
+        IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
         for d in docs:
+            file_name = _g(d, "file_name", "file")
+            file_path = _g(d, "file_path", "")
+            file_type = (_g(d, "file_type", "") or "").lower()
             size = _gint(d, "size_bytes", 0)
-            st.write(
-                f"— {_g(d, 'file_name', 'file')}  _({size:,} bytes)_  "
-                f"→ `{_g(d, 'file_path', '')}`"
+            is_image = (
+                file_type.startswith("image/")
+                or file_name.lower().endswith(IMG_EXTS)
             )
+
+            url = signed_document_url(file_path) if file_path else None
+
+            with st.container(border=True):
+                head_l, head_r = st.columns([3, 1])
+                head_l.markdown(
+                    f"<div style='font-weight:600; color:#0F172A; "
+                    f"font-size:0.92rem;'>"
+                    f"{'🖼️' if is_image else '📄'} {file_name}</div>"
+                    f"<div style='color:#64748B; font-size:0.8rem; "
+                    f"margin-top:0.15rem;'>"
+                    f"{(size / 1024):.0f} KB"
+                    + (f" · {file_type}" if file_type else "")
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+                if url:
+                    head_r.link_button(
+                        "Open ↗",
+                        url,
+                        use_container_width=True,
+                    )
+
+                if not url:
+                    st.warning(
+                        "Could not generate a preview link for this file. "
+                        "Check that the storage bucket allows signed URLs."
+                    )
+                elif is_image:
+                    # Inline preview, capped to a reasonable width so a
+                    # 4032×3024 phone photo doesn't dominate the page.
+                    try:
+                        st.image(url, width=420)
+                    except Exception as exc:  # noqa: BLE001
+                        st.caption(
+                            f"Could not load preview: {exc}. "
+                            "Use 'Open ↗' to view the file directly."
+                        )
 
     st.markdown("<hr class='c2s-rule' style='margin:1.6rem 0 1rem;'/>",
                 unsafe_allow_html=True)
