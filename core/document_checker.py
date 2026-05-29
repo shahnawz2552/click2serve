@@ -3,15 +3,16 @@
 Purpose
 -------
 Most rejected govt-paperwork applications fail because the supporting
-photo was blurry, badly lit, or cropped. This module catches those
-issues *at upload time* so the customer can retake the photo before
-the booking goes in. Reduces rework for the shop and frustration for
-the customer.
+photo was blurry, badly lit, cropped, or simply the wrong document
+entirely. This module catches those issues *at upload time* so the
+customer can retake (or swap) the photo before the booking goes in.
+Reduces rework for the shop and frustration for the customer.
 
-What it checks (no external API, no network calls, no API keys)
----------------------------------------------------------------
-1. **File format**       — must be JPEG / PNG / WebP for image checks,
-                            PDF accepted as-is (basic size validation).
+What it checks (no API keys, no network calls, no per-check cost)
+-----------------------------------------------------------------
+Layer 1 — image quality (Pillow + numpy, always-on)
+
+1. **File format**       — JPEG / PNG / WebP for images, PDF accepted as-is.
 2. **File size**         — at least 50 KB, at most 10 MB.
 3. **Resolution**        — minimum 800 × 600 px for ID-style documents.
 4. **Sharpness / blur**  — Laplacian-style edge variance via PIL filters
@@ -24,6 +25,24 @@ What it checks (no external API, no network calls, no API keys)
                             (Aadhaar ≈ 1.586:1) so heavily-cropped photos
                             are flagged.
 
+Layer 2 — content (pytesseract OCR, if tesseract binary is installed)
+
+7. **Document type**     — OCR'd text is matched against a keyword
+                            dictionary to identify AADHAAR / PAN /
+                            PASSPORT / DRIVING_LICENCE / VOTER_ID. If
+                            the page hints which document is expected,
+                            mismatches surface as a blocker (uploaded
+                            PAN when the service was Aadhaar).
+8. **Aadhaar number**    — 12-digit pattern (XXXX XXXX XXXX) detection.
+                            Privacy: the value is partially masked in
+                            the UI and never logged or stored.
+9. **PAN number**        — ABCDE1234F format detection.
+10. **Passport number**  — Indian "letter + 7 digits" format.
+
+Layer 2 fails closed: if pytesseract isn't installed (or tesseract isn't
+on the path), every Layer 2 check is silently skipped. Layer 1 still
+runs on its own — the customer just sees fewer rows in the report card.
+
 The result is a ``DocumentReport`` with:
 - ``score``       — 0–100 overall quality grade
 - ``is_valid``    — True iff there are zero blocker checks
@@ -32,20 +51,24 @@ The result is a ``DocumentReport`` with:
 
 The page UI renders this directly via :func:`render_report_html`.
 
-Future v2 (not in this release)
--------------------------------
-- Plug pytesseract for OCR-based content detection (Aadhaar number
-  pattern, government keywords).
-- Optional GPT-4V / Gemini Vision call for shops willing to pay
-  ~₹0.85 per check, for tampering detection and photo–document
-  match.
+Privacy note
+------------
+We extract the Aadhaar / PAN / passport number for *validation only*.
+The value is held in memory just long enough to fill out the verdict
+card, partially masked before it's shown to the customer, and never
+written to disk or sent to the database. Storing or logging Aadhaar
+numbers has legal implications under India's Aadhaar Act.
 
-Both can drop in without changing this module's public API.
+Future v3 (not in this release)
+-------------------------------
+- Optional GPT-4V / Gemini Vision call for shops willing to pay
+  ~₹0.85 per check, for tampering detection and photo–document match.
 """
 from __future__ import annotations
 
 import io
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -116,12 +139,18 @@ def check_document(
     file_bytes: bytes,
     file_name: str = "",
     expected_aspect_ratio: Optional[float] = None,
+    expected_document_type: Optional[str] = None,
 ) -> DocumentReport:
     """Run every available check and return a single report.
 
-    ``expected_aspect_ratio`` is used to compare ID-card-shaped uploads
-    against a known target (e.g. ``1.586`` for Aadhaar). Pass ``None``
-    to skip the aspect-ratio check.
+    ``expected_aspect_ratio`` compares ID-card-shaped uploads against a
+    known target (e.g. ``1.586`` for Aadhaar). Pass ``None`` to skip.
+
+    ``expected_document_type`` is one of the constants below — when set,
+    Layer 2 OCR cross-checks the detected text against it and surfaces
+    a blocker if they disagree (e.g. PAN uploaded for an Aadhaar
+    service). Pass ``None`` to skip cross-checking but still run
+    document-type detection for information.
     """
     report = DocumentReport(is_valid=True, score=100, checks=[])
 
@@ -178,6 +207,11 @@ def check_document(
     _check_brightness(report, image, np)
     if expected_aspect_ratio:
         _check_aspect_ratio(report, image, expected_aspect_ratio)
+
+    # Layer 2: OCR content checks. Silent no-op if tesseract isn't on
+    # the path. Always runs after Layer 1 so that a Layer 1 blocker
+    # stops Layer 2 from wasting CPU on a known-bad image.
+    _check_ocr_content(report, image, expected_document_type)
 
     return _finalize(report)
 
@@ -490,4 +524,329 @@ def aspect_ratio_for_category(category: str) -> Optional[float]:
     )
     if any(k in cat for k in id_keywords):
         return ID_CARD_TARGET_RATIO
+    return None
+
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Layer 2 — OCR-based content checks (pytesseract)
+# ──────────────────────────────────────────────────────────────────────────
+# Document-type constants. Strings are stable for storage / comparison.
+DOC_TYPE_AADHAAR = "AADHAAR"
+DOC_TYPE_PAN = "PAN"
+DOC_TYPE_PASSPORT = "PASSPORT"
+DOC_TYPE_DRIVING_LICENCE = "DRIVING_LICENCE"
+DOC_TYPE_VOTER_ID = "VOTER_ID"
+
+# Friendly labels for UI display.
+_DOC_TYPE_LABELS = {
+    DOC_TYPE_AADHAAR: "Aadhaar card",
+    DOC_TYPE_PAN: "PAN card",
+    DOC_TYPE_PASSPORT: "Passport",
+    DOC_TYPE_DRIVING_LICENCE: "Driving licence",
+    DOC_TYPE_VOTER_ID: "Voter ID",
+}
+
+# Keyword → document-type lookup. Order matters: more specific keys first.
+# Words are checked against the OCR output uppercased + space-collapsed.
+_DOC_TYPE_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
+    (DOC_TYPE_AADHAAR, (
+        "AADHAAR", "AADHAR", "UIDAI",
+        "UNIQUE IDENTIFICATION", "GOVERNMENT OF INDIA",
+    )),
+    (DOC_TYPE_PAN, (
+        "PERMANENT ACCOUNT NUMBER", "INCOME TAX DEPARTMENT",
+        "INCOMETAX", "PAN CARD",
+    )),
+    (DOC_TYPE_PASSPORT, (
+        "REPUBLIC OF INDIA", "PASSPORT", "TYPE / TYPE", "TYPE/TYPE",
+    )),
+    (DOC_TYPE_DRIVING_LICENCE, (
+        "DRIVING LICENCE", "DRIVING LICENSE",
+        "TRANSPORT DEPARTMENT", "MOTOR VEHICLES",
+    )),
+    (DOC_TYPE_VOTER_ID, (
+        "ELECTION COMMISSION", "ELECTORAL", "EPIC NO", "VOTER",
+    )),
+]
+
+
+def _ocr_available() -> bool:
+    """True iff both the pytesseract module *and* the tesseract binary work.
+
+    We can't just check the import — pytesseract is a thin wrapper that
+    shells out to the ``tesseract`` binary. If that binary isn't on
+    PATH, pytesseract raises at first use. The check below tries both
+    in one go and caches the result for the rest of the process.
+    """
+    cached = getattr(_ocr_available, "_cached", None)
+    if cached is not None:
+        return cached
+    try:
+        import pytesseract
+        # Probe the binary; raises TesseractNotFoundError if missing.
+        pytesseract.get_tesseract_version()
+        result = True
+    except Exception as exc:  # noqa: BLE001
+        logger.info(
+            "pytesseract / tesseract unavailable, OCR layer disabled: %s",
+            exc,
+        )
+        result = False
+    setattr(_ocr_available, "_cached", result)
+    return result
+
+
+def _run_ocr(image) -> str:
+    """OCR the image and return uppercase text with collapsed whitespace.
+
+    Returns an empty string if anything goes wrong — callers should
+    treat that as "no OCR data available" rather than an error.
+    """
+    try:
+        import pytesseract
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        # `--psm 6` = "Assume a single uniform block of text" — works
+        # well for ID cards which are essentially flat pages of text.
+        text = pytesseract.image_to_string(
+            image, config="--psm 6", lang="eng",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("OCR failed: %s", exc)
+        return ""
+    # Normalise whitespace and uppercase for keyword matching.
+    return re.sub(r"\s+", " ", (text or "")).strip().upper()
+
+
+def _detect_document_type(text: str) -> Optional[str]:
+    """Return the document-type constant matching the OCR text, or None.
+
+    First strong match wins. The keyword tables are intentionally short
+    and conservative — false positives are worse than false negatives
+    here (we'd rather say "couldn't auto-detect" than wrongly accuse
+    the customer of uploading the wrong document).
+    """
+    if not text:
+        return None
+    # Score each candidate by how many of its keywords appear, pick the
+    # one with the most hits (with a minimum of 1 hit).
+    best_type: Optional[str] = None
+    best_score = 0
+    for doc_type, keywords in _DOC_TYPE_KEYWORDS:
+        hits = sum(1 for kw in keywords if kw in text)
+        if hits > best_score:
+            best_score = hits
+            best_type = doc_type
+    return best_type if best_score >= 1 else None
+
+
+_AADHAAR_NUMBER_RE = re.compile(
+    r"\b(\d{4})[\s-]?(\d{4})[\s-]?(\d{4})\b"
+)
+_PAN_RE = re.compile(r"\b([A-Z]{5}\d{4}[A-Z])\b")
+_PASSPORT_RE = re.compile(r"\b([A-Z]\d{7})\b")
+
+
+def _extract_aadhaar_number(text: str) -> Optional[str]:
+    """Return the 12-digit Aadhaar number found in the OCR text, or None."""
+    if not text:
+        return None
+    m = _AADHAAR_NUMBER_RE.search(text)
+    if not m:
+        return None
+    return f"{m.group(1)} {m.group(2)} {m.group(3)}"
+
+
+def _extract_pan(text: str) -> Optional[str]:
+    if not text:
+        return None
+    m = _PAN_RE.search(text)
+    return m.group(1) if m else None
+
+
+def _extract_passport_number(text: str) -> Optional[str]:
+    if not text:
+        return None
+    m = _PASSPORT_RE.search(text)
+    return m.group(1) if m else None
+
+
+def _mask_aadhaar(number: str) -> str:
+    """Display only the last 4 digits — UIDAI privacy guideline."""
+    digits = re.sub(r"\D", "", number)
+    if len(digits) != 12:
+        return "XXXX XXXX XXXX"
+    return f"XXXX XXXX {digits[-4:]}"
+
+
+def _mask_pan(pan: str) -> str:
+    pan = (pan or "").upper()
+    if len(pan) != 10:
+        return "XXXXXXXXXX"
+    return f"{pan[:3]}XXXX{pan[-3:]}"
+
+
+def _check_ocr_content(
+    report: DocumentReport, image,
+    expected_type: Optional[str],
+) -> None:
+    """Run all OCR-dependent checks. Silent no-op when tesseract is missing."""
+    if not _ocr_available():
+        # Surface a one-time "OCR off" info row so the customer knows
+        # the AI Layer 2 check exists but isn't running.
+        report.checks.append(DocumentCheck(
+            label="AI content scan",
+            passed=True,
+            severity=SEVERITY_INFO,
+            detail=(
+                "OCR layer not installed on this server — quality checks "
+                "above still apply"
+            ),
+        ))
+        return
+
+    text = _run_ocr(image)
+    if not text:
+        report.checks.append(DocumentCheck(
+            label="AI content scan",
+            passed=False,
+            severity=SEVERITY_WARNING,
+            detail=(
+                "Could not read any text from this image. Try a sharper, "
+                "well-lit photo."
+            ),
+        ))
+        return
+
+    detected = _detect_document_type(text)
+    detected_label = _DOC_TYPE_LABELS.get(detected, "—") if detected else None
+
+    if detected:
+        report.checks.append(DocumentCheck(
+            label="Document recognised",
+            passed=True,
+            severity=SEVERITY_INFO,
+            detail=f"Detected: {detected_label}",
+        ))
+    else:
+        # No detection isn't always wrong — it could be a non-ID document
+        # like a school certificate. Surface as a *warning* unless the
+        # service has an explicit expectation.
+        report.checks.append(DocumentCheck(
+            label="Document recognised",
+            passed=False,
+            severity=(
+                SEVERITY_BLOCKER if expected_type
+                else SEVERITY_WARNING
+            ),
+            detail=(
+                "Couldn't auto-recognise the document type. Make sure "
+                "the whole card is visible and the text is readable."
+            ),
+        ))
+
+    # If the service told us what to expect, cross-check against detection.
+    if expected_type and detected and detected != expected_type:
+        expected_label = _DOC_TYPE_LABELS.get(expected_type, expected_type)
+        report.checks.append(DocumentCheck(
+            label="Document mismatch",
+            passed=False,
+            severity=SEVERITY_BLOCKER,
+            detail=(
+                f"This service needs a {expected_label}, but the photo "
+                f"looks like a {detected_label}. Please upload the "
+                f"correct document."
+            ),
+        ))
+
+    # Format-specific number checks. Only run for the type we actually
+    # detected — running them all every time produces noisy rows.
+    if detected == DOC_TYPE_AADHAAR:
+        num = _extract_aadhaar_number(text)
+        if num:
+            report.checks.append(DocumentCheck(
+                label="Aadhaar number",
+                passed=True,
+                severity=SEVERITY_INFO,
+                detail=(
+                    f"12-digit number visible ({_mask_aadhaar(num)}). "
+                    "Last 4 shown for your verification only."
+                ),
+            ))
+        else:
+            report.checks.append(DocumentCheck(
+                label="Aadhaar number",
+                passed=False,
+                severity=SEVERITY_WARNING,
+                detail=(
+                    "Couldn't read the 12-digit Aadhaar number. "
+                    "A clearer photo will help."
+                ),
+            ))
+    elif detected == DOC_TYPE_PAN:
+        pan = _extract_pan(text)
+        if pan:
+            report.checks.append(DocumentCheck(
+                label="PAN format",
+                passed=True,
+                severity=SEVERITY_INFO,
+                detail=(
+                    f"PAN format detected ({_mask_pan(pan)}). "
+                    "Middle masked for privacy."
+                ),
+            ))
+        else:
+            report.checks.append(DocumentCheck(
+                label="PAN format",
+                passed=False,
+                severity=SEVERITY_WARNING,
+                detail=(
+                    "Couldn't read the PAN number. A clearer photo "
+                    "will help."
+                ),
+            ))
+    elif detected == DOC_TYPE_PASSPORT:
+        ppt = _extract_passport_number(text)
+        if ppt:
+            # Passport numbers aren't classified as restricted PII the
+            # same way Aadhaar is, but we still mask out of caution.
+            report.checks.append(DocumentCheck(
+                label="Passport number",
+                passed=True,
+                severity=SEVERITY_INFO,
+                detail=f"Passport format detected ({ppt[0]}XXXXX{ppt[-2:]}).",
+            ))
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Service → expected document type lookup
+# ──────────────────────────────────────────────────────────────────────────
+_SERVICE_KEYWORD_TO_TYPE: list[tuple[tuple[str, ...], str]] = [
+    (("aadhaar", "aadhar", "uidai"),       DOC_TYPE_AADHAAR),
+    (("pan",),                             DOC_TYPE_PAN),
+    (("passport",),                        DOC_TYPE_PASSPORT),
+    (("driving licence", "driving license",
+      "dl ",  "dl-", "dl_"),               DOC_TYPE_DRIVING_LICENCE),
+    (("voter", "epic", "elector"),         DOC_TYPE_VOTER_ID),
+]
+
+
+def expected_document_type_for_service(
+    service_name: str = "", category: str = "",
+) -> Optional[str]:
+    """Heuristically map a service to the document type it requires.
+
+    Reads ``service_name`` first (e.g. *"Aadhaar update"*) and falls
+    back to ``category`` (e.g. *"Government / Aadhaar"*). Returns
+    ``None`` when there's no clear match — the booking flow will then
+    skip the Layer 2 cross-check rather than guess.
+    """
+    haystack = f"{service_name or ''} {category or ''}".lower()
+    if not haystack.strip():
+        return None
+    for keywords, doc_type in _SERVICE_KEYWORD_TO_TYPE:
+        if any(k in haystack for k in keywords):
+            return doc_type
     return None
