@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import streamlit as st
 
-from core.db import get_shop_config, update_shop_config
+from core.db import (
+    count_bookings, delete_all_bookings, get_shop_config,
+    update_shop_config,
+)
 from core.notifications import (
     is_api_key_configured, is_twilio_configured,
     send_test_message, send_twilio_test,
@@ -411,3 +414,64 @@ with st.expander("Want auto-reconciled payments? (Razorpay roadmap)"):
            that drops in here without changing the data model.
         """
     )
+
+
+
+# ── Section 06 — Danger zone (bulk booking deletion) ──────────────────────
+# Typed-confirmation gate: the owner must type DELETE ALL exactly. We
+# also stash a 'reveal' flag in session state so the destructive button
+# isn't even visible until the owner expands the section, and the form
+# clears itself after every submit.
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat' style='color:#B91C1C;'>Section 06 \u00b7 Danger zone</div>"
+    "<h3 style='margin:0 0 0.6rem; color:#B91C1C;'>Reset all bookings.</h3>"
+    "<p style='color:#5A6157; margin:0 0 0.8rem;'>"
+    "Permanently deletes <b>every booking</b> in the system along with their "
+    "uploaded documents. Service catalog, shop config, and the owner "
+    "account are NOT affected. Cannot be undone."
+    "</p>",
+    unsafe_allow_html=True,
+)
+
+current_count = count_bookings()
+if current_count == 0:
+    st.success("There are no bookings to delete.")
+else:
+    st.warning(
+        f"You currently have **{current_count}** booking(s) on file. "
+        f"Resetting will delete every single one."
+    )
+
+    # Two-stage UX: an expander hides the danger fields until the owner
+    # actively opts in. Inside the expander, a form requires typing
+    # 'DELETE ALL' before the submit button does anything.
+    with st.expander("I understand, show me the reset controls"):
+        with st.form("danger_zone_reset_all", clear_on_submit=True):
+            st.error(
+                "**This action is irreversible.** Type the phrase below "
+                "exactly to confirm."
+            )
+            confirm = st.text_input(
+                "Type `DELETE ALL` (uppercase, exactly) to enable the button",
+                placeholder="DELETE ALL",
+                key="danger_confirm_text",
+            )
+            do_reset = st.form_submit_button(
+                f"Permanently delete all {current_count} booking(s)",
+                use_container_width=True,
+                type="primary",
+                disabled=(confirm.strip() != "DELETE ALL"),
+            )
+
+        if do_reset and confirm.strip() == "DELETE ALL":
+            try:
+                removed = delete_all_bookings()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Could not reset bookings: {exc}")
+            else:
+                st.success(
+                    f"Done. Deleted {removed} booking(s) and any attached "
+                    f"documents."
+                )
+                st.rerun()
