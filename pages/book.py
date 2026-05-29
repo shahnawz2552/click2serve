@@ -7,6 +7,12 @@ Three logical steps shown as a progress bar:
 
 In Streamlit's single-page model these are all on one page; the bar is a
 visual cue. Step 1+2 are highlighted before submit, step 3 after.
+
+Document uploads run through ``core.document_checker`` immediately on
+selection so the customer sees a quality verdict (sharpness, lighting,
+framing, score 0-100) BEFORE submitting. Photos that fail blocker checks
+are not allowed through; warning-level issues lower the score but still
+let the customer submit.
 """
 from __future__ import annotations
 
@@ -15,6 +21,9 @@ import re
 import streamlit as st
 
 from core.db import create_booking, list_services, save_document
+from core.document_checker import (
+    aspect_ratio_for_category, check_document, render_report_html,
+)
 from core.styles import (
     BORDER, INK, MUTED, PRIMARY, category_badge, inject_global_css,
     progress_steps, section_header, subhead, success_token_card,
@@ -135,6 +144,12 @@ with st.form("booking_form", clear_on_submit=False):
         "<div style='height:0.8rem;'></div>", unsafe_allow_html=True,
     )
     subhead("Documents")
+    st.caption(
+        "Every photo you upload runs through our **AI document checker** "
+        "the moment it lands here. We look for sharpness, lighting, and "
+        "card framing so you don't get a rejection later. PDFs are "
+        "accepted as-is."
+    )
     uploaded = st.file_uploader(
         "Upload supporting documents (optional, up to 5)",
         type=["pdf", "jpg", "jpeg", "png", "webp"],
@@ -143,9 +158,63 @@ with st.form("booking_form", clear_on_submit=False):
         label_visibility="collapsed",
     )
 
-    submitted = st.form_submit_button("Submit booking →",
-                                      use_container_width=True,
-                                      type="primary")
+    # ── AI document checker — runs on every uploaded file ────────────
+    # Runs INSIDE the form (so the verdict appears immediately on
+    # selection) but the actual booking submit + storage upload happens
+    # below, only when the form's submit button is clicked.
+    expected_ratio = aspect_ratio_for_category(service["category"])
+    blocker_filenames: list[str] = []
+    checked_files: list[tuple] = []  # (uploaded_file, report, raw_bytes)
+    if uploaded:
+        st.markdown(
+            "<div style='height:0.6rem;'></div>"
+            "<div style='display:flex; align-items:center; gap:0.5rem; "
+            "margin-bottom:0.5rem;'>"
+            "<span style='display:inline-flex; align-items:center; "
+            "gap:0.35rem; background:#DBEAFE; color:#1D4ED8; "
+            "padding:0.18rem 0.55rem; border-radius:999px; font-size:0.7rem; "
+            "font-weight:700; text-transform:uppercase; letter-spacing:"
+            "0.06em;'>\u2728 AI checker</span>"
+            "<span style='color:#64748B; font-size:0.84rem;'>"
+            "Verifying every file you uploaded \u2014 results below.</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        for upload in uploaded:
+            try:
+                upload.seek(0)
+                data = upload.read()
+                upload.seek(0)
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Could not read {upload.name}: {exc}")
+                continue
+
+            report = check_document(
+                file_bytes=data,
+                file_name=upload.name,
+                expected_aspect_ratio=expected_ratio,
+            )
+            checked_files.append((upload, report, data))
+            st.markdown(
+                render_report_html(report, file_label=upload.name),
+                unsafe_allow_html=True,
+            )
+            if not report.is_valid:
+                blocker_filenames.append(upload.name)
+
+    submitted = st.form_submit_button(
+        "Submit booking \u2192",
+        use_container_width=True,
+        type="primary",
+        disabled=bool(blocker_filenames),
+    )
+
+    if blocker_filenames:
+        st.error(
+            "Please replace or remove the file(s) that failed AI checks "
+            "before submitting: " + ", ".join(blocker_filenames)
+        )
 
 
 # ── Submission handler ──────────────────────────────────────────────────────
@@ -177,9 +246,19 @@ if submitted:
     )
 
     saved_docs: list[str] = []
+    # Reuse the bytes we already read for the AI checker so we don't
+    # double-read the upload buffer (Streamlit's UploadedFile resets its
+    # cursor to start after read(), but pulling from our cache is faster
+    # and works even when the cursor is mid-stream).
+    file_data_by_name = {
+        u.name: data for (u, _r, data) in checked_files
+    }
     for upload in uploaded or []:
         try:
-            data = upload.read()
+            data = file_data_by_name.get(upload.name)
+            if data is None:
+                upload.seek(0)
+                data = upload.read()
             save_document(
                 booking_id,
                 file_name=upload.name,
