@@ -28,6 +28,7 @@ from core.document_checker import (
 from core.email_sender import send_booking_email
 from core.notifications import (
     customer_booking_confirmation_chat_url,
+    notify_customer_booking_confirmation_sms,
     notify_customer_booking_confirmation_twilio,
 )
 from core.styles import (
@@ -336,7 +337,31 @@ if submitted:
         # 'toggle off / no creds' cases — those are normal here.
         failures.append(f"WhatsApp: {reason_wa}")
 
-    # 2. Email confirmation (auto when configured + customer gave email)
+    # 2. SMS via Twilio (auto, paid, India: requires DLT registration)
+    # Sits between WhatsApp and email so the success toast lists the
+    # most direct delivery first. Behaves identically to the WhatsApp
+    # branch — silent for 'disabled / not configured', surfaces real
+    # Twilio errors (DLT block, geo permission, invalid sender, etc.)
+    # so the owner can act on them.
+    try:
+        ok_sms, reason_sms = notify_customer_booking_confirmation_sms(
+            customer_phone=phone,
+            customer_name=name,
+            token=token,
+            service_name=service["name"],
+            total_fee=total_fee,
+            eta_hours=int(service["eta_hours"] or 0),
+        )
+    except Exception as exc:  # noqa: BLE001
+        ok_sms, reason_sms = False, f"unexpected: {exc}"
+    if ok_sms:
+        confirmations.append("✉️ SMS sent to your phone")
+    elif reason_sms and not (
+        "disabled" in reason_sms or "not configured" in reason_sms
+    ):
+        failures.append(f"SMS: {reason_sms}")
+
+    # 3. Email confirmation (auto when configured + customer gave email)
     if email:
         try:
             ok_em, reason_em = send_booking_email(
@@ -360,7 +385,7 @@ if submitted:
         else:
             failures.append(f"Email: {reason_em}")
 
-    # 3. Always-available wa.me click-to-chat link — works for ANY phone
+    # 4. Always-available wa.me click-to-chat link — works for ANY phone
     # without API setup. Lands the message into WhatsApp on the
     # customer's device pre-filled, ready to send.
     chat_url = customer_booking_confirmation_chat_url(

@@ -9,8 +9,8 @@ from core.db import (
 )
 from core.email_sender import is_email_configured, send_test_email
 from core.notifications import (
-    is_api_key_configured, is_twilio_configured,
-    send_test_message, send_twilio_test,
+    is_api_key_configured, is_twilio_configured, is_twilio_sms_configured,
+    send_sms_test, send_test_message, send_twilio_test,
 )
 from core.payments import is_valid_vpa
 from core.styles import inject_global_css, section_header
@@ -416,6 +416,175 @@ with st.expander("Want auto-reconciled payments? (Razorpay roadmap)"):
         """
     )
 
+
+
+# ── Section 05 — SMS (Twilio, India: requires DLT registration) ──────────
+# Sits between the Twilio WhatsApp section (04) and email (05a) because
+# SMS uses the same provider but a different sender / template.
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat'>Section 05</div>"
+    "<h3 style='margin:0 0 0.5rem;'>Auto-send SMS to customer (Twilio).</h3>"
+    "<p style='color:#5A6157; margin:0 0 0.8rem;'>"
+    "When enabled, every new booking sends a short text message to the "
+    "customer with their booking number and ETA. Works on any phone, "
+    "no app required \u2014 the most reliable channel for Indian "
+    "customers."
+    "</p>"
+    "<p style='color:#5A6157; margin:0 0 0.8rem; font-size:0.86rem;'>"
+    "<b>India compliance note:</b> TRAI requires every commercial SMS "
+    "to use a DLT-registered sender ID and a pre-approved template. "
+    "Twilio handles the registration through their portal but it takes "
+    "1\u20132 weeks. Until DLT clears, SMS to Indian numbers will fail "
+    "with carrier-block errors that the booking page surfaces in the "
+    "Twilio HTTP error message. The wa.me click-to-chat button on the "
+    "success card always works as a fallback while DLT is pending."
+    "</p>",
+    unsafe_allow_html=True,
+)
+
+sms_ready = is_twilio_sms_configured()
+if sms_ready:
+    st.success(
+        "Twilio SMS sender is **configured**. Auto-send is ready to enable."
+    )
+else:
+    st.warning(
+        "Twilio SMS is **not configured**. Add `from_number_sms` to your "
+        "`[twilio]` secrets block (or rely on the existing `from_number` "
+        "as a fallback for sandbox testing). Setup walkthrough below."
+    )
+
+sms_default = bool(shop.get("sms_enabled"))
+
+with st.form("sms_form"):
+    sms_enabled = st.checkbox(
+        "Auto-send SMS to customer on every new booking",
+        value=sms_default,
+        disabled=not sms_ready,
+        help=(
+            "Each SMS costs Twilio's per-segment rate (~Rs. 0.30 in "
+            "India for DLT-registered traffic). Disable this if you "
+            "want to rely on email + WhatsApp only."
+        ),
+    )
+    save_sms = st.form_submit_button(
+        "Save SMS settings \u2192",
+        type="primary",
+        use_container_width=True,
+        disabled=not sms_ready,
+    )
+
+if save_sms:
+    try:
+        update_shop_config(sms_enabled=bool(sms_enabled))
+        st.success(
+            "Saved. "
+            + ("Customers will now be auto-notified by SMS on every new "
+               "booking." if sms_enabled
+               else "Auto-send SMS is now off.")
+        )
+        st.rerun()
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Could not save SMS settings: {exc}")
+
+with st.expander("Send a test SMS"):
+    st.caption(
+        "Sends one test message to the number you enter. Bypasses the "
+        "toggle so you can verify Twilio reachability before going live. "
+        "For Indian numbers in production, the recipient must be DLT-"
+        "compliant — for development, use a Twilio trial-verified number."
+    )
+    sms_test_phone = st.text_input(
+        "Phone number to test (with country code)",
+        value=_shop_val("owner_phone"),
+        max_chars=15,
+        key="sms_test_phone",
+        help="Include country code, e.g. +919876543210.",
+    )
+    if st.button(
+        "Send test SMS",
+        key="sms_test_btn",
+        use_container_width=True,
+        disabled=not sms_ready,
+    ):
+        ok, reason = send_sms_test(phone=sms_test_phone)
+        if ok:
+            st.success(reason)
+        else:
+            st.error(reason)
+
+with st.expander("SMS setup \u2014 step by step"):
+    st.markdown(
+        """
+        **Step 1 \u2014 Activate SMS on your Twilio account.**
+
+        You already have a Twilio account from the WhatsApp setup
+        (Section 04). To enable SMS:
+
+        1. Twilio Console \u2192 **Phone Numbers** \u2192 **Manage** \u2192
+           **Buy a number**.
+        2. Filter by **Capabilities = SMS** and pick a number. Trial
+           accounts get a free US +1 number that works for testing
+           but won't deliver to real Indian customers without DLT.
+        3. Note the number Twilio assigns you (e.g. `+12025550199`).
+
+        **Step 2 \u2014 Add the SMS sender to your secrets.**
+
+        Edit your existing `[twilio]` block in Streamlit secrets:
+
+        ```toml
+        [twilio]
+        account_sid     = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        auth_token      = "your-32-char-token"
+        from_number     = "+14155238886"     # WhatsApp sandbox
+        from_number_sms = "+12025550199"     # the SMS-capable number you bought
+        ```
+
+        Save \u2192 Streamlit auto-restarts \u2192 the green status pill
+        in this section will switch to "configured".
+
+        **Step 3 \u2014 (India only) Register for DLT.**
+
+        TRAI requires every commercial SMS to Indian numbers to use a
+        DLT-registered sender ID and a template that's been pre-approved
+        by the recipient's carrier. Twilio runs the whole registration:
+
+        1. Open Twilio's DLT registration portal:
+           https://www.twilio.com/docs/sms/dlt-registration
+        2. Follow their forms (entity registration, header registration,
+           template registration). Total: 1\u20132 weeks.
+        3. Once approved, set `from_number_sms` to the registered DLT
+           sender ID and update the SMS template in
+           `core/notifications.py` (`customer_booking_confirmation_sms_message`)
+           to match the approved template wording exactly.
+
+        Until DLT is approved, sending to Indian numbers returns errors
+        like *Twilio code 30007: Carrier filtering blocked* \u2014 the
+        booking page surfaces these in the success toast so the owner
+        can see what's blocked.
+
+        **Step 4 \u2014 Test with the button above.**
+
+        Use a number you control (your own mobile). On a Twilio trial
+        account, only verified-trial numbers can receive SMS \u2014 add
+        your number at Twilio Console \u2192 Phone Numbers \u2192
+        **Verified Caller IDs** first.
+
+        ---
+
+        **Troubleshooting common Twilio SMS errors:**
+
+        - **21408** \u2014 Geo permissions blocking the destination.
+          Twilio Console \u2192 Messaging \u2192 Settings \u2192
+          Geo Permissions \u2192 enable India.
+        - **30007** \u2014 Carrier filtering. India-specific; means DLT
+          isn't registered or template doesn't match.
+        - **21606** \u2014 The 'From' number isn't SMS-capable. Buy an
+          SMS-capable number and put it in `from_number_sms`.
+        - **21211 / 21614** \u2014 Recipient number invalid for SMS.
+        """
+    )
 
 
 # ── Section 05a — Booking-confirmation email (SMTP) ─────────────────────

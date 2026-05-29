@@ -597,6 +597,248 @@ def notify_customer_booking_confirmation_twilio(
     return _send_via_twilio(to_phone=customer_phone, message=msg)
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# SMS (Twilio) — short codes / 10DLC for India
+# ──────────────────────────────────────────────────────────────────────────
+# Why a separate helper next to the existing WhatsApp one?
+#   - SMS uses the same Twilio Messages API endpoint, but the `From` and
+#     `To` parameters are bare phone numbers (no `whatsapp:` prefix).
+#   - SMS uses a DIFFERENT Twilio sender than WhatsApp:
+#       * WhatsApp sandbox  -> +14155238886 with `whatsapp:` prefix
+#       * SMS to India      -> a registered sender ID via Twilio India
+#                              (DLT-registered) + an approved template
+#         For development you can use a Twilio trial number (US +1
+#         number works for testing to verified-trial-recipient phones,
+#         but won't deliver to real Indian customers without DLT.)
+#
+# India-specific compliance (TRAI DLT, mandatory since 2020)
+#   - Every commercial SMS to an Indian number must be sent from a
+#     DLT-registered sender ID and use a pre-approved template.
+#   - Twilio's docs: https://www.twilio.com/docs/sms/dlt-registration
+#   - Registration takes 1-2 weeks. Until DLT clears, SMS to Indian
+#     numbers either fail to deliver or get auto-blocked by carriers.
+#   - This module sends the message regardless; if Twilio returns an
+#     error we surface it. The bookings page also keeps the wa.me /
+#     email channels as fallbacks so the customer always has the
+#     booking number on hand.
+def _sms_enabled() -> bool:
+    """Per-shop toggle from shop_config; defaults False so existing
+    deployments don't start sending paid SMS without explicit opt-in.
+    """
+    try:
+        from core.db import get_shop_config
+
+        cfg = get_shop_config() or {}
+        return bool(cfg.get("sms_enabled"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _twilio_sms_from() -> str:
+    """Read the SMS-specific sender from secrets.
+
+    Falls back to the WhatsApp `from_number` if `from_number_sms` isn't
+    set — this is wrong for production India (DLT requires distinct
+    senders) but lets development tests run against a single Twilio
+    trial number.
+    """
+    s = _twilio_secrets()
+    sms_from = (s.get("from_number_sms") or "").strip()
+    if sms_from:
+        return sms_from if sms_from.startswith("+") else f"+{sms_from}"
+    # Fall back to WhatsApp number (strip whatsapp: if present).
+    fallback = (s.get("from_number") or "").strip()
+    if fallback.startswith("whatsapp:"):
+        fallback = fallback[len("whatsapp:"):]
+    if fallback and not fallback.startswith("+"):
+        fallback = f"+{fallback}"
+    return fallback
+
+
+def is_twilio_sms_configured() -> bool:
+    """True iff account_sid + auth_token are set AND we have an SMS sender.
+
+    Doesn't strictly require a separate `from_number_sms` — the WhatsApp
+    `from_number` works as a fallback (with the `whatsapp:` prefix
+    stripped). Production India deployments should set both.
+    """
+    s = _twilio_secrets()
+    if not (s.get("account_sid") or "").strip():
+        return False
+    if not (s.get("auth_token") or "").strip():
+        return False
+    return bool(_twilio_sms_from())
+
+
+def _send_sms_via_twilio(
+    *, to_phone: str, message: str, timeout: float = 8.0,
+) -> tuple[bool, str]:
+    """POST a single SMS to Twilio's Messages endpoint.
+
+    Mirror of ``_send_via_twilio`` but without the ``whatsapp:`` prefix.
+    Returns ``(ok, reason)``; never raises.
+    """
+    s = _twilio_secrets()
+    sid = (s.get("account_sid") or "").strip()
+    token = (s.get("auth_token") or "").strip()
+    if not (sid and token):
+        return False, "Twilio credentials not configured in secrets.toml"
+
+    from_num = _twilio_sms_from()
+    if not from_num:
+        return False, (
+            "No SMS sender configured. Add `from_number_sms` (or "
+            "`from_number`) to the [twilio] block in secrets."
+        )
+
+    to = _normalize_phone(to_phone)  # +91xxxxxxxxxx
+    if not to:
+        return False, "Invalid recipient phone number"
+
+    data = {"From": from_num, "To": to, "Body": message}
+    try:
+        resp = requests.post(
+            _TWILIO_API.format(sid=sid),
+            data=data,
+            auth=(sid, token),
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Twilio SMS request failed: %s", exc)
+        return False, f"Network error contacting Twilio: {exc}"
+    except Exception as exc:  # last-resort safety
+        logger.exception("Unexpected Twilio SMS error: %s", exc)
+        return False, f"Unexpected error: {exc}"
+
+    if 200 <= resp.status_code < 300:
+        return True, f"SMS sent to {to_phone}"
+
+    try:
+        err = resp.json()
+        twilio_msg = err.get("message") or err.get("more_info") or "unknown"
+        twilio_code = err.get("code")
+    except Exception:  # noqa: BLE001
+        twilio_msg = (resp.text or "")[:200] or "unknown error"
+        twilio_code = None
+
+    code_str = f" (Twilio code {twilio_code})" if twilio_code else ""
+    logger.warning(
+        "Twilio SMS %s for %s: %s%s",
+        resp.status_code, to_phone, twilio_msg, code_str,
+    )
+
+    # Map common Twilio SMS error codes to actionable hints. These
+    # frequently trip up Indian deployments — surfacing them in the
+    # toast saves the owner a trip to Twilio's debugger.
+    hint = ""
+    if twilio_code == 21408:
+        hint = (
+            "  Hint: Twilio's geographic permissions are blocking this "
+            "destination. Enable the country (India) in Twilio Console "
+            "-> Messaging -> Settings -> Geo Permissions."
+        )
+    elif twilio_code == 30007:
+        hint = (
+            "  Hint: Carrier filtering blocked the message. For Indian "
+            "numbers, this almost always means the sender / template is "
+            "not DLT-registered. See "
+            "https://www.twilio.com/docs/sms/dlt-registration"
+        )
+    elif twilio_code == 21211 or twilio_code == 21614:
+        hint = (
+            "  Hint: Recipient number is invalid for SMS. Check the "
+            "country code and that it is an SMS-capable mobile."
+        )
+    elif twilio_code == 21606:
+        hint = (
+            "  Hint: The 'From' number isn't SMS-capable. Buy a Twilio "
+            "phone number with SMS capability and put it in "
+            "from_number_sms."
+        )
+
+    return False, f"Twilio HTTP {resp.status_code}{code_str}: {twilio_msg}{hint}"
+
+
+def customer_booking_confirmation_sms_message(
+    *,
+    customer_name: str,
+    token: str,
+    service_name: str,
+    total_fee: int,
+    eta_hours: int,
+    shop_name: str | None = None,
+) -> str:
+    """Build the SMS confirmation text. Shorter than WhatsApp because
+    SMS is billed per 160-char segment.
+
+    The DLT-approved template MUST match this layout up to the
+    placeholder content. Variables Twilio fills in: {token},
+    {service_name}, {total_fee}, {eta_hours}.
+    """
+    first_name = (customer_name or "").strip().split()[:1]
+    greeting = first_name[0] if first_name else "Customer"
+    shop = (shop_name or _shop_name()).strip() or "Click2Serve"
+    # Keep under 160 chars where possible to avoid multi-segment billing.
+    return (
+        f"{shop}: Hi {greeting}, your booking {token} ({service_name}) "
+        f"is confirmed. Total Rs.{total_fee}. Ready in ~{eta_hours}h. "
+        f"Save this number to track or pay."
+    )
+
+
+def notify_customer_booking_confirmation_sms(
+    *,
+    customer_phone: str,
+    customer_name: str,
+    token: str,
+    service_name: str,
+    total_fee: int,
+    eta_hours: int,
+) -> tuple[bool, str]:
+    """Send the booking-confirmation SMS via Twilio. Always safe to call.
+
+    Short-circuits when the toggle is off, creds are missing, or
+    the customer has no phone.
+    """
+    if not _sms_enabled():
+        return False, "SMS auto-send is disabled in Settings"
+    if not is_twilio_sms_configured():
+        return False, (
+            "Twilio SMS not configured. Need account_sid + auth_token + "
+            "from_number_sms in the [twilio] secrets block."
+        )
+    if not (customer_phone or "").strip():
+        return False, "Customer has no phone on file"
+
+    msg = customer_booking_confirmation_sms_message(
+        customer_name=customer_name, token=token,
+        service_name=service_name, total_fee=total_fee,
+        eta_hours=eta_hours,
+    )
+    return _send_sms_via_twilio(to_phone=customer_phone, message=msg)
+
+
+def send_sms_test(*, phone: str) -> tuple[bool, str]:
+    """One-shot test SMS. Bypasses the toggle so the owner can verify
+    Twilio reachability before turning auto-send on.
+    """
+    if not is_twilio_sms_configured():
+        return False, (
+            "Twilio SMS is not configured. Add the [twilio] block with "
+            "account_sid, auth_token, and from_number_sms to your "
+            "Streamlit secrets."
+        )
+    if not (phone or "").strip():
+        return False, "Please enter a phone number to test."
+    return _send_sms_via_twilio(
+        to_phone=phone,
+        message=(
+            "Click2Serve: SMS test message. If you got this, your "
+            "Twilio SMS setup is working."
+        ),
+    )
+
+
 def customer_booking_confirmation_chat_url(
     *,
     customer_phone: str,
