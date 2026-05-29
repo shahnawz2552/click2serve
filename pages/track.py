@@ -8,7 +8,10 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import streamlit as st
 
-from core.db import get_booking_by_token, list_bookings, list_documents
+from core.db import (
+    get_booking_by_token, list_bookings, list_documents,
+    signed_document_url,
+)
 from core.styles import (
     BORDER, INK, MUTED, PRIMARY, SURFACE, inject_global_css, payment_badge,
     section_header, status_badge, status_timeline,
@@ -189,16 +192,38 @@ with tab_one:
                 st.markdown(
                     f"<div style='font-size:0.78rem; font-weight:700; "
                     f"color:{INK}; text-transform:uppercase; letter-spacing:"
-                    f"0.06em; margin-bottom:0.5rem;'>Documents on file</div>",
+                    f"0.06em; margin-bottom:0.6rem;'>Your documents on file"
+                    f"</div>",
                     unsafe_allow_html=True,
                 )
+                IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
                 for d in docs:
-                    st.markdown(
+                    file_name = _r(d, "file_name", "file")
+                    file_path = _r(d, "file_path", "")
+                    file_type = (_r(d, "file_type", "") or "").lower()
+                    is_image = (
+                        file_type.startswith("image/")
+                        or file_name.lower().endswith(IMG_EXTS)
+                    )
+                    url = (
+                        signed_document_url(file_path) if file_path else None
+                    )
+                    cols = st.columns([3, 1])
+                    cols[0].markdown(
                         f"<div style='color:{INK}; font-size:0.9rem; "
-                        f"padding:0.2rem 0;'>📎  {_r(d, 'file_name', 'file')}"
-                        f"</div>",
+                        f"padding:0.2rem 0;'>"
+                        f"{'🖼️' if is_image else '📎'} {file_name}</div>",
                         unsafe_allow_html=True,
                     )
+                    if url:
+                        cols[1].link_button(
+                            "View ↗", url, use_container_width=True,
+                        )
+                    if url and is_image:
+                        try:
+                            st.image(url, width=320)
+                        except Exception:  # noqa: BLE001
+                            pass
 
         if _r(booking, "notes"):
             st.markdown("<div style='height:0.8rem;'></div>",
