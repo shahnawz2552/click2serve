@@ -124,9 +124,43 @@ on conflict (id) do nothing;
 -- without waiting for the periodic auto-reload (this is what causes the
 -- PGRST204 "could not find column ... in the schema cache" error).
 -- ─────────────────────────────────────────────────────────────────────────
-notify pgrst, 'reload schema';
-
 -- ─────────────────────────────────────────────────────────────────────────
+-- documents.booking_id foreign key — ensure ON DELETE CASCADE is applied
+-- ─────────────────────────────────────────────────────────────────────────
+-- Older Supabase projects created from earlier versions of this file have
+-- the FK without ON DELETE CASCADE, because Postgres won't change FK
+-- actions on re-run of CREATE TABLE IF NOT EXISTS. That causes
+-- 'violates foreign key constraint "documents_booking_id_fkey"' (23503)
+-- when the owner tries to delete a booking that has attached documents.
+-- The block below drops the existing FK (under any naming convention)
+-- and recreates it with ON DELETE CASCADE.
+do $$
+declare
+    fk_name text;
+begin
+    select tc.constraint_name
+      into fk_name
+    from information_schema.table_constraints tc
+    join information_schema.key_column_usage kcu
+      on tc.constraint_name = kcu.constraint_name
+     and tc.table_schema    = kcu.table_schema
+    where tc.table_schema    = 'public'
+      and tc.table_name      = 'documents'
+      and tc.constraint_type = 'FOREIGN KEY'
+      and kcu.column_name    = 'booking_id'
+    limit 1;
+
+    if fk_name is not null then
+        execute format('alter table public.documents drop constraint %I', fk_name);
+    end if;
+
+    alter table public.documents
+        add constraint documents_booking_id_fkey
+        foreign key (booking_id) references public.bookings(id)
+        on delete cascade;
+end$$;
+
+notify pgrst, 'reload schema';
 -- Row Level Security
 -- ─────────────────────────────────────────────────────────────────────────
 -- For an MVP single-tenant shop, we keep RLS DISABLED and rely on the

@@ -574,6 +574,35 @@ def _collect_storage_keys_for_bookings(
     return [r["file_path"] for r in (res.data or []) if r.get("file_path")]
 
 
+def _delete_document_rows(booking_ids: list[int]) -> None:
+    """Delete documents.* rows for these bookings BEFORE deleting bookings.
+
+    The schema declares documents.booking_id with ON DELETE CASCADE, but
+    Supabase projects created from older versions of schema.sql won't
+    have that clause on the foreign key — Supabase doesn't retroactively
+    update FK actions when CREATE TABLE IF NOT EXISTS is re-run. So
+    deleting a booking with attached documents fails with FK error 23503.
+
+    Always deleting document rows explicitly first removes the
+    dependency on the FK action, so booking deletion works on every
+    deployment regardless of how/when the schema was originally created.
+    """
+    if not booking_ids:
+        return
+    sb = get_supabase()
+    try:
+        sb.table("documents").delete().in_(
+            "booking_id", [int(b) for b in booking_ids]
+        ).execute()
+    except Exception as exc:  # noqa: BLE001
+        # If the documents table is empty or the rows are already gone,
+        # this is a no-op. Log but don't block the booking delete.
+        logger.warning(
+            "Could not delete document rows for %d booking(s): %s",
+            len(booking_ids), exc,
+        )
+
+
 def delete_booking(booking_id: int) -> int:
     """Delete a single booking + its documents (DB rows + storage blobs).
 
@@ -583,6 +612,8 @@ def delete_booking(booking_id: int) -> int:
     booking_id = int(booking_id)
     keys = _collect_storage_keys_for_bookings([booking_id])
     _delete_storage_keys(keys)
+    # Delete document ROWS explicitly — see _delete_document_rows for why.
+    _delete_document_rows([booking_id])
 
     sb = get_supabase()
     res = sb.table("bookings").delete().eq("id", booking_id).execute()
@@ -596,6 +627,7 @@ def delete_bookings_bulk(booking_ids: list[int]) -> int:
         return 0
     keys = _collect_storage_keys_for_bookings(ids)
     _delete_storage_keys(keys)
+    _delete_document_rows(ids)
 
     sb = get_supabase()
     res = sb.table("bookings").delete().in_("id", ids).execute()
@@ -616,6 +648,7 @@ def delete_all_bookings() -> int:
         return 0
     keys = _collect_storage_keys_for_bookings(ids)
     _delete_storage_keys(keys)
+    _delete_document_rows(ids)
 
     # Supabase requires a filter on bulk deletes; gte=0 matches every row
     # since IDs are positive bigserial.
