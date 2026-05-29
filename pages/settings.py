@@ -417,14 +417,180 @@ with st.expander("Want auto-reconciled payments? (Razorpay roadmap)"):
 
 
 
-# ── Section 06 — Danger zone (bulk booking deletion) ──────────────────────
+# ── Section 06 — Local SEO & Google Maps (NEW) ───────────────────────────
+# Captures the data Google needs to surface the shop in Maps results
+# with a working "Book Now" button. Pure metadata; no destructive action.
+st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='c2s-cat'>Section 06</div>"
+    "<h3 style='margin:0 0 0.5rem;'>Local SEO &amp; Google Maps.</h3>"
+    "<p style='color:#5A6157; margin:0 0 0.8rem;'>"
+    "Make your shop appear when customers search "
+    "<i>'passport service near me'</i> on Google. The fields here power "
+    "the embedded map on the Contact page and the schema.org "
+    "<code>LocalBusiness</code> structured data we emit on every page "
+    "(which is what unlocks the green <b>Book Now</b> button on your "
+    "Google Business Profile)."
+    "</p>",
+    unsafe_allow_html=True,
+)
+
+with st.form("local_seo_form"):
+    business_url = st.text_input(
+        "Public app URL (your Streamlit Cloud URL)",
+        value=_shop_val("business_url"),
+        placeholder="https://click2serve.streamlit.app",
+        help=(
+            "The URL customers reach when they tap 'Book Now' on your "
+            "Google listing. Add ?utm_source=google&utm_medium=gbp at the "
+            "end so we can track inbound Maps traffic."
+        ),
+    )
+
+    c_seo1, c_seo2 = st.columns(2)
+    maps_url = c_seo1.text_input(
+        "Google Maps share URL",
+        value=_shop_val("maps_url"),
+        placeholder="https://maps.app.goo.gl/...",
+        help=(
+            "Open your shop on Google Maps → tap 'Share' → 'Copy link'. "
+            "Used for the 'Open in Google Maps' button on the Contact page."
+        ),
+    )
+    place_id = c_seo2.text_input(
+        "Google Place ID (optional)",
+        value=_shop_val("place_id"),
+        placeholder="ChIJ...",
+        help=(
+            "Lookup at https://developers.google.com/maps/documentation/"
+            "places/web-service/place-id. Helps Google match this app to "
+            "your business listing."
+        ),
+    )
+
+    maps_embed_url = st.text_input(
+        "Maps embed URL (iframe src)",
+        value=_shop_val("maps_embed_url"),
+        placeholder="https://www.google.com/maps/embed?pb=...",
+        help=(
+            "On Google Maps, click 'Share' → 'Embed a map' → 'Copy HTML' "
+            "and paste only the <i>src=\"...\"</i> URL here."
+        ),
+    )
+
+    c_lat, c_lng = st.columns(2)
+    lat_str = c_lat.text_input(
+        "Latitude (optional)",
+        value=str(_shop_val("latitude") or ""),
+        placeholder="27.2152",
+    )
+    lng_str = c_lng.text_input(
+        "Longitude (optional)",
+        value=str(_shop_val("longitude") or ""),
+        placeholder="77.4977",
+    )
+
+    save_seo = st.form_submit_button(
+        "Save SEO settings →",
+        type="primary",
+        use_container_width=True,
+    )
+
+if save_seo:
+    update: dict = {
+        "business_url": business_url.strip(),
+        "maps_url": maps_url.strip(),
+        "maps_embed_url": maps_embed_url.strip(),
+        "place_id": place_id.strip(),
+    }
+    # Latitude/longitude are nullable — only persist when valid floats.
+    for key, raw in (("latitude", lat_str), ("longitude", lng_str)):
+        raw = raw.strip()
+        if not raw:
+            update[key] = None
+            continue
+        try:
+            update[key] = float(raw)
+        except ValueError:
+            st.error(f"{key.title()} must be a number (e.g. 27.2152).")
+            st.stop()
+    try:
+        update_shop_config(**update)
+        st.success(
+            "SEO settings saved. The Contact page map and the page-level "
+            "structured data will refresh on next page load."
+        )
+        st.rerun()
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Could not save SEO settings: {exc}")
+
+with st.expander("How to get listed on Google Maps with a Book Now button"):
+    st.markdown(
+        """
+        **Step 1 — Claim or create your Google Business Profile** (free).
+
+        1. Open https://business.google.com.
+        2. Search for your shop name. If a listing exists, click *Claim*.
+           Otherwise click *Add your business to Google* and pick the
+           closest category — **"Public Service"** or
+           **"Document Center"** are good fits for a paperwork shop.
+        3. Enter your address, phone (the same number you saved in
+           Section 01 above), and opening hours. Google will verify by
+           postcard or video — usually 3–5 days.
+
+        **Step 2 — Set the 'Appointment URL' on the listing.**
+
+        1. In your Business Profile dashboard, go to *Edit profile* →
+           *Contact* → *Appointment links*.
+        2. Paste your Streamlit Cloud URL with a UTM tag, exactly:
+
+           ```
+           https://yourshop.streamlit.app/?utm_source=google&utm_medium=gbp
+           ```
+
+        This is what makes the green **Book Now** button appear on your
+        listing in Google Maps and Google Search.
+
+        **Step 3 — Confirm Google sees the structured data.**
+
+        After Streamlit Cloud redeploys, paste your URL into Google's
+        Rich Results Test:
+        https://search.google.com/test/rich-results
+
+        You should see *LocalBusiness* with your shop name and a
+        *ReserveAction* entry. If anything is missing, fill it in
+        Section 01 above (shop name, address, phone, hours) and re-save.
+
+        **Step 4 — Fill the fields above so the Contact page shows a real map.**
+
+        - **Google Maps share URL** → tap *Share* → *Copy link* on your
+          listing. The Contact page's *Open in Google Maps* button will
+          take customers straight to your real listing instead of a
+          generic address search.
+        - **Maps embed URL** → tap *Share* → *Embed a map* → copy only
+          the `src="..."` URL from the iframe HTML. Pastes a real,
+          interactive map of your exact shop into the Contact page.
+
+        **What you'll see in 1–2 weeks:**
+
+        - "Found you on Google!" banner appears for inbound visitors.
+        - Customers search "passport service near me" → see your shop
+          → tap *Book Now* → land directly on Click2Serve.
+        - Inbound bookings get tagged with `utm_source=google` so you
+          can tell Maps traffic from word-of-mouth in the Revenue page
+          (future enhancement).
+        """
+    )
+
+
+
 # Typed-confirmation gate: the owner must type DELETE ALL exactly. We
 # also stash a 'reveal' flag in session state so the destructive button
 # isn't even visible until the owner expands the section, and the form
 # clears itself after every submit.
 st.markdown("<hr class='c2s-rule'/>", unsafe_allow_html=True)
 st.markdown(
-    "<div class='c2s-cat' style='color:#B91C1C;'>Section 06 \u00b7 Danger zone</div>"
+    "<div class='c2s-cat' style='color:#B91C1C;'>Section 07 \u00b7 Danger zone</div>"
     "<h3 style='margin:0 0 0.6rem; color:#B91C1C;'>Reset all bookings.</h3>"
     "<p style='color:#5A6157; margin:0 0 0.8rem;'>"
     "Permanently deletes <b>every booking</b> in the system along with their "

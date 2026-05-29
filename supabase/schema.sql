@@ -78,6 +78,13 @@ create table if not exists shop_config (
     opening_hours   text not null default '',
     whatsapp_enabled boolean not null default true,
     twilio_enabled  boolean not null default false,
+    -- Google Maps / Local SEO
+    business_url    text not null default '',  -- canonical app URL (e.g. https://click2serve.streamlit.app)
+    maps_url        text not null default '',  -- shareable Google Maps URL (https://maps.app.goo.gl/...)
+    maps_embed_url  text not null default '',  -- iframe-embed URL from Google Maps "Embed a map"
+    place_id        text not null default '',  -- Google Place ID, optional
+    latitude        numeric,                   -- nullable, only set when known
+    longitude       numeric,                   -- nullable
     updated_at      timestamptz not null default now()
 );
 
@@ -106,6 +113,13 @@ alter table shop_config add column if not exists upi_payee_name text not null de
 alter table shop_config add column if not exists opening_hours  text not null default '';
 alter table shop_config add column if not exists whatsapp_enabled boolean not null default true;
 alter table shop_config add column if not exists twilio_enabled  boolean not null default false;
+-- Google Maps / Local SEO (safe to re-run on existing deployments)
+alter table shop_config add column if not exists business_url   text not null default '';
+alter table shop_config add column if not exists maps_url       text not null default '';
+alter table shop_config add column if not exists maps_embed_url text not null default '';
+alter table shop_config add column if not exists place_id       text not null default '';
+alter table shop_config add column if not exists latitude       numeric;
+alter table shop_config add column if not exists longitude      numeric;
 alter table shop_config add column if not exists updated_at     timestamptz not null default now();
 
 -- services: requirements + active flag may pre-date some installations

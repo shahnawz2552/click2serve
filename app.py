@@ -12,6 +12,7 @@ Sidebar starts collapsed so the home page lands cleanly on mobile.
 import streamlit as st
 
 from core.db import init_db
+from core.seo import google_traffic_banner, inject_local_business_jsonld
 from core.styles import (
     BORDER, INK, MUTED, PRIMARY, PRIMARY_TINT, SURFACE, inject_global_css,
 )
@@ -34,6 +35,15 @@ st.set_page_config(
 
 # ── Apply the global stylesheet to every page ───────────────────────────────
 inject_global_css()
+
+# ── Local business structured data — drives the Google Maps "Book Now" button.
+# Emitted on every page so any URL the shop shares (root, /book, /contact)
+# can serve as the canonical landing for Google to crawl.
+inject_local_business_jsonld()
+
+# ── Welcome banner for traffic arriving via Google Business Profile ─────────
+# Detects ``?utm_source=google`` so we can warmly greet walk-by Maps users.
+google_traffic_banner()
 
 
 def _owner_route_visible() -> bool:

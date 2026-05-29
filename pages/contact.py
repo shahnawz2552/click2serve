@@ -147,11 +147,32 @@ if address:
             f"white-space:pre-wrap; margin-bottom:0.8rem;'>📍 {address}</div>",
             unsafe_allow_html=True,
         )
-        maps = _maps_url(address)
-        if maps:
+
+        # Embedded Google Map — keyless iframe. The owner pastes the
+        # "Embed a map" URL from Google Maps into Settings; we fall
+        # back to a generic search-by-address embed if they haven't.
+        embed_url = (_v("maps_embed_url") or "").strip()
+        if not embed_url:
+            embed_url = (
+                "https://www.google.com/maps?q="
+                + quote(address) + "&output=embed"
+            )
+        st.markdown(
+            f'<iframe src="{embed_url}" width="100%" height="280" '
+            f'style="border:0; border-radius:10px; margin-bottom:0.8rem;" '
+            f'loading="lazy" referrerpolicy="no-referrer-when-downgrade" '
+            f'allowfullscreen></iframe>',
+            unsafe_allow_html=True,
+        )
+
+        # Prefer the shop's shareable maps URL (https://maps.app.goo.gl/...)
+        # which opens the actual Google Business Profile; fall back to
+        # a search-by-address URL otherwise.
+        link_url = (_v("maps_url") or "").strip() or _maps_url(address)
+        if link_url:
             st.link_button(
                 "Open in Google Maps →",
-                maps,
+                link_url,
                 use_container_width=True,
             )
 

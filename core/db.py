@@ -444,6 +444,8 @@ def update_shop_config(**fields: Any) -> None:
         "shop_name", "owner_name", "owner_phone", "address",
         "upi_vpa", "upi_payee_name", "opening_hours",
         "whatsapp_enabled", "twilio_enabled",
+        "business_url", "maps_url", "maps_embed_url", "place_id",
+        "latitude", "longitude",
     }
     clean = {
         k: (v.strip() if isinstance(v, str) else v)
