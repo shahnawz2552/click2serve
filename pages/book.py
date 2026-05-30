@@ -38,6 +38,9 @@ from core.styles import (
 
 inject_global_css()
 
+from core.visitor import track_session_visit
+track_session_visit()
+
 PHONE_RE = re.compile(r"^[6-9]\d{9}$")  # Indian mobile, 10 digits, 6-9 prefix
 
 

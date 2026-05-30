@@ -129,6 +129,19 @@ alter table services add column if not exists requirements text    not null defa
 alter table services add column if not exists active       boolean not null default true;
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- Visitor counter (cheap, append-only, no PII)
+-- ─────────────────────────────────────────────────────────────────────────
+-- One row per calendar day. Pages atomically `INSERT ... ON CONFLICT DO
+-- UPDATE SET visits = visits + 1`. We deliberately don't store IPs,
+-- user agents, or any identifier — just a per-day counter. That's
+-- enough for "how many people visited" and zero privacy risk.
+create table if not exists daily_visits (
+    day      date primary key,
+    visits   integer not null default 0
+);
+create index if not exists ix_daily_visits_day on daily_visits(day desc);
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- Singleton config row
 -- ─────────────────────────────────────────────────────────────────────────
 insert into shop_config (id, updated_at)

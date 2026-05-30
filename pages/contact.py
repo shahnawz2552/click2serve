@@ -18,6 +18,9 @@ from core.styles import (
 
 inject_global_css()
 
+from core.visitor import track_session_visit
+track_session_visit()
+
 shop = get_shop_config() or {}
 
 

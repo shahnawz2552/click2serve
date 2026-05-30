@@ -73,6 +73,38 @@ m4.markdown(
 )
 
 
+# ── Visitor stats — second KPI row ──────────────────────────────────────────
+# Cheap aggregates from the daily_visits table. Helps the owner see at
+# a glance whether any of the marketing channels (Google Maps, word of
+# mouth) are bringing traffic in. Fails silently to zeros if the table
+# isn't present yet (e.g. before the migration runs).
+from core.db import get_visit_stats
+
+vstats = get_visit_stats()
+st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
+v1, v2, v3, v4 = st.columns(4, gap="small")
+v1.markdown(
+    kpi_card("👁️", str(vstats.get("today", 0)),
+             "Visitors today", PRIMARY),
+    unsafe_allow_html=True,
+)
+v2.markdown(
+    kpi_card("📅", str(vstats.get("yesterday", 0)),
+             "Yesterday", "#64748B"),
+    unsafe_allow_html=True,
+)
+v3.markdown(
+    kpi_card("📈", f"{vstats.get('last7', 0):,}",
+             "Last 7 days", "#6366F1"),
+    unsafe_allow_html=True,
+)
+v4.markdown(
+    kpi_card("🌍", f"{vstats.get('all_time', 0):,}",
+             "All-time visits", "#0F766E"),
+    unsafe_allow_html=True,
+)
+
+
 # ── Quick actions ───────────────────────────────────────────────────────────
 st.markdown("<div style='height:1.2rem;'></div>", unsafe_allow_html=True)
 
