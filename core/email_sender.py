@@ -1,36 +1,50 @@
-"""Email sending via SMTP (built-in smtplib, zero new dependencies).
+"""Email sending — Brevo HTTP API (preferred) or SMTP (fallback).
 
 Used by Click2Serve to email the customer their booking token + summary
 right after a booking is created. Configurable through Streamlit secrets,
 and graceful when not configured — pages call ``send_booking_email`` and
 get back a ``(ok, reason)`` tuple they can fold into their success toast.
 
-Setup (one-time, owner does this once)
---------------------------------------
-The shop owner picks an SMTP provider — most owners will use Gmail, but
-Brevo / Mailgun / SendGrid / their own ISP all work. Add credentials to
-``.streamlit/secrets.toml`` (or Streamlit Cloud → Manage app → Secrets):
+Two transports
+--------------
 
-    [smtp]
-    host        = "smtp.gmail.com"
-    port        = 587
-    username    = "yourshop@gmail.com"
-    password    = "<app-specific password>"   # NOT your account password
-    from_email  = "yourshop@gmail.com"
-    from_name   = "Click2Serve Bharatpur"
-    use_tls     = true
+1. **Brevo HTTP API (preferred for Brevo deployments)**
+   No SMTP authentication, no IP whitelist, no port-587-vs-465 dance —
+   just an HTTPS POST with a Bearer-style ``api-key`` header. Bypasses
+   the ``525 Unauthorized IP address`` block that hits SMTP from
+   shared-IP hosts like Streamlit Cloud.
 
-For Gmail, "password" must be an `App Password
-<https://myaccount.google.com/apppasswords>`_ — Google blocks regular
-passwords for SMTP. Brevo / Mailgun / SendGrid issue an SMTP key under
-their dashboard.
+   Configure with::
 
-Why smtplib instead of a fancy provider SDK?
-- Zero new dependencies (smtplib is Python stdlib).
-- Works against any provider — Gmail, Brevo, Mailgun, SendGrid, the
-  shop's own ISP, anything that speaks SMTP.
-- Trivial to switch later if needed; this module's public surface is
-  the only contract pages depend on.
+       [brevo_api]
+       api_key    = "xkeysib-..."        # from /settings/keys/api
+       from_email = "<your Brevo signup email or a verified sender>"
+       from_name  = "Click2Serve"
+
+2. **SMTP (works for Gmail / Resend / Brevo SMTP / Mailgun / SendGrid /
+   custom servers)**
+   Plain ``smtplib`` over STARTTLS or implicit-TLS. Authentication
+   varies by provider — for Gmail you need an App Password, for
+   Resend you literally use the string ``"resend"`` as username, etc.
+
+   Configure with::
+
+       [smtp]
+       host        = "smtp-relay.brevo.com"   # or smtp.gmail.com / smtp.resend.com / ...
+       port        = 587                      # or 465 for implicit TLS
+       username    = "<provider-specific>"
+       password    = "<provider-specific>"
+       from_email  = "yourshop@..."
+       from_name   = "Click2Serve"
+       use_tls     = true
+
+Selection rule
+--------------
+
+If ``[brevo_api]`` is configured AND has a non-empty ``api_key``, we use
+HTTP and ignore SMTP. Otherwise we fall back to SMTP. Pages don't need
+to know which transport ran — the public functions
+``send_booking_email`` and ``send_test_email`` route automatically.
 """
 from __future__ import annotations
 
@@ -41,9 +55,16 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Any
 
+import requests
 import streamlit as st
 
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Secret loaders + transport selection
+# ──────────────────────────────────────────────────────────────────────────
+_BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 def _smtp_secrets() -> dict[str, Any]:
@@ -56,8 +77,27 @@ def _smtp_secrets() -> dict[str, Any]:
         return {}
 
 
-def is_email_configured() -> bool:
-    """Return True iff host + username + password + from_email are all set."""
+def _brevo_api_secrets() -> dict[str, Any]:
+    """Return the [brevo_api] section of secrets, or empty dict if absent."""
+    if not hasattr(st, "secrets"):
+        return {}
+    try:
+        return dict(st.secrets.get("brevo_api", {}) or {})
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def is_brevo_api_configured() -> bool:
+    """True iff [brevo_api] is set with the required fields."""
+    s = _brevo_api_secrets()
+    return bool(
+        (s.get("api_key") or "").strip()
+        and (s.get("from_email") or "").strip()
+    )
+
+
+def is_smtp_configured() -> bool:
+    """True iff [smtp] has the four required fields."""
     s = _smtp_secrets()
     return bool(
         (s.get("host") or "").strip()
@@ -67,8 +107,44 @@ def is_email_configured() -> bool:
     )
 
 
+def is_email_configured() -> bool:
+    """Return True iff EITHER transport is configured.
+
+    Used by the Settings page to show the green/yellow status pill.
+    """
+    return is_brevo_api_configured() or is_smtp_configured()
+
+
+def email_transport_label() -> str:
+    """Return a short human label for the active email transport.
+
+    Used by the Settings page so the owner can confirm at a glance
+    which provider is actually doing the sending.
+    """
+    if is_brevo_api_configured():
+        return "Brevo HTTP API"
+    if is_smtp_configured():
+        host = (_smtp_secrets().get("host") or "").lower()
+        if "brevo" in host or "sendinblue" in host:
+            return "Brevo SMTP"
+        if "gmail" in host or "google" in host:
+            return "Gmail SMTP"
+        if "resend" in host:
+            return "Resend SMTP"
+        if "mailgun" in host:
+            return "Mailgun SMTP"
+        if "sendgrid" in host:
+            return "SendGrid SMTP"
+        return f"SMTP ({host})"
+    return "not configured"
+
+
 def _build_from_header() -> str:
-    s = _smtp_secrets()
+    """Build the RFC-5322 `From` header for the active transport."""
+    if is_brevo_api_configured():
+        s = _brevo_api_secrets()
+    else:
+        s = _smtp_secrets()
     name = (s.get("from_name") or "Click2Serve").strip() or "Click2Serve"
     addr = (s.get("from_email") or s.get("username") or "").strip()
     return formataddr((name, addr))
@@ -100,13 +176,19 @@ def _auth_failure_message(host: str, raw_exc: Exception | None = None) -> str:
         )
     if "brevo" in h or "sendinblue" in h:
         return (
-            "Brevo rejected the credentials. Check that:"
-            "\n  1. `username` is the EMAIL you signed up with at Brevo"
-            " (NOT the literal text 'apikey')."
-            "\n  2. `password` is your Brevo SMTP key (from "
-            "https://app.brevo.com/settings/keys/smtp — NOT the API key"
-            " from the API tab)."
+            "Brevo SMTP rejected the credentials. Check that:"
+            "\n  1. `username` is the LOGIN value shown on "
+            "https://app.brevo.com/settings/keys/smtp — for newer Brevo "
+            "accounts this is a generated `xxxxxx@smtp-brevo.com` "
+            "address, NOT your signup email."
+            "\n  2. `password` is the SMTP key from that same SMTP tab "
+            "(NOT the API key from the API Keys tab — those have "
+            "different prefixes)."
             "\n  3. Your Brevo account's signup email is verified."
+            "\n  4. If you're getting `525 Unauthorized IP`, the IP "
+            "running this app isn't on Brevo's whitelist. Switch to the "
+            "Brevo HTTP API (no IP restriction): add a [brevo_api] "
+            "block to your secrets with `api_key` and `from_email`."
             + detail
         )
     if "mailgun" in h:
@@ -155,32 +237,24 @@ def send_booking_email(
 ) -> tuple[bool, str]:
     """Send a booking-confirmation email. Always returns ``(ok, reason)``.
 
+    Dispatches between transports:
+      - Brevo HTTP API if [brevo_api] is configured (no IP whitelist
+        needed — bypasses the 525 Unauthorized IP errors that hit
+        SMTP from Streamlit Cloud and other shared-IP hosts).
+      - SMTP otherwise (works for Gmail, Resend, Mailgun, SendGrid,
+        Brevo SMTP if you've whitelisted the host's IP, etc.).
+
     Never raises — the caller can safely call this from inside the
     booking submit handler without risking the booking itself.
     """
     if not (to_email or "").strip():
         return False, "No customer email on file"
-    if not is_email_configured():
-        return False, "Email not configured in secrets.toml"
 
-    s = _smtp_secrets()
-    host = (s["host"] or "").strip()
-    port = int(s.get("port") or 587)
-    username = (s["username"] or "").strip()
-    password = (s["password"] or "").strip()
-    use_tls = bool(s.get("use_tls", True))
-
+    # Build the message body once; the transports below differ only in
+    # how they ship it.
     first_name = (customer_name or "").strip().split()[:1]
     greeting_name = first_name[0] if first_name else "there"
-
-    msg = EmailMessage()
-    msg["Subject"] = (
-        f"Your booking is confirmed — {token}  ·  {shop_name}"
-    )
-    msg["From"] = _build_from_header()
-    msg["To"] = to_email.strip()
-    # Plain-text fallback (always sent — clients that can't render HTML
-    # still see something useful).
+    subject = f"Your booking is confirmed — {token}  ·  {shop_name}"
     plain_lines = [
         f"Hi {greeting_name},",
         "",
@@ -204,11 +278,8 @@ def send_booking_email(
         f"Thanks,",
         f"{shop_name}",
     ]
-    msg.set_content("\n".join(plain_lines))
-
-    # HTML version — modern but defensive (works in Gmail, Apple Mail,
-    # Outlook, mobile clients). Uses inline styles only.
-    html = _build_html_body(
+    plain_body = "\n".join(plain_lines)
+    html_body = _build_html_body(
         greeting_name=greeting_name,
         shop_name=shop_name,
         token=token,
@@ -218,11 +289,207 @@ def send_booking_email(
         track_url=track_url,
         pay_url=pay_url,
     )
-    msg.add_alternative(html, subtype="html")
+
+    # ── Transport selection ───────────────────────────────────────────
+    if is_brevo_api_configured():
+        return _send_via_brevo_api(
+            to_email=to_email.strip(),
+            subject=subject,
+            html_body=html_body,
+            plain_body=plain_body,
+            timeout=timeout,
+        )
+
+    if not is_smtp_configured():
+        return False, (
+            "Email is not configured. Add either `[brevo_api]` (HTTP) "
+            "or `[smtp]` to your Streamlit secrets."
+        )
+
+    return _send_via_smtp(
+        to_email=to_email.strip(),
+        subject=subject,
+        html_body=html_body,
+        plain_body=plain_body,
+        timeout=timeout,
+    )
+
+
+def send_test_email(*, to_email: str) -> tuple[bool, str]:
+    """Send a single 'this is a test' email used by the Settings UI.
+
+    Routes through whichever transport is configured (Brevo HTTP API
+    preferred; SMTP fallback). Bypasses no toggle — credentials alone
+    are enough to test, so the owner can verify reachability before
+    relying on it.
+    """
+    if not is_email_configured():
+        return False, (
+            "Email is not configured. Add either a `[brevo_api]` block "
+            "(HTTP, recommended for Streamlit Cloud) or a `[smtp]` "
+            "block to your Streamlit secrets."
+        )
+    if not (to_email or "").strip():
+        return False, "Please enter an email address to test."
+
+    plain_body = (
+        "If you got this email, your Click2Serve email setup is working.\n"
+        "You can now turn on booking-confirmation emails for customers."
+    )
+    # Tiny HTML version so providers don't down-rank the test as
+    # text-only spam.
+    html_body = (
+        "<p>If you got this email, your Click2Serve email setup is "
+        "working.</p>"
+        "<p>You can now turn on booking-confirmation emails for "
+        "customers.</p>"
+    )
+    subject = "Click2Serve — email transport test"
+
+    if is_brevo_api_configured():
+        return _send_via_brevo_api(
+            to_email=to_email.strip(),
+            subject=subject,
+            html_body=html_body,
+            plain_body=plain_body,
+            timeout=12.0,
+        )
+
+    return _send_via_smtp(
+        to_email=to_email.strip(),
+        subject=subject,
+        html_body=html_body,
+        plain_body=plain_body,
+        timeout=12.0,
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Brevo HTTP API transport
+# ──────────────────────────────────────────────────────────────────────────
+def _send_via_brevo_api(
+    *,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    plain_body: str,
+    timeout: float = 12.0,
+) -> tuple[bool, str]:
+    """POST a single transactional email to Brevo's HTTP API.
+
+    Brevo's HTTP API doesn't have the IP-whitelist requirement that
+    blocks their SMTP from shared-IP hosts like Streamlit Cloud. Same
+    free 300/day quota, same provider, just a different transport.
+
+    Returns ``(ok, reason)``. Never raises.
+    """
+    s = _brevo_api_secrets()
+    api_key = (s.get("api_key") or "").strip()
+    from_email = (s.get("from_email") or "").strip()
+    from_name = (s.get("from_name") or "Click2Serve").strip() or "Click2Serve"
+
+    if not api_key:
+        return False, (
+            "Brevo HTTP API key is missing. Add `api_key` to the "
+            "`[brevo_api]` block in your Streamlit secrets."
+        )
+    if not from_email:
+        return False, (
+            "Brevo HTTP API needs a `from_email`. Add it to the "
+            "`[brevo_api]` block in your Streamlit secrets."
+        )
+
+    payload = {
+        "sender": {"email": from_email, "name": from_name},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": html_body,
+        "textContent": plain_body,
+    }
+    headers = {
+        # Brevo expects this exact header name (no Bearer / Basic prefix).
+        "api-key": api_key,
+        "accept": "application/json",
+        "content-type": "application/json",
+    }
+
+    try:
+        resp = requests.post(
+            _BREVO_API_URL, json=payload, headers=headers, timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Brevo HTTP API request failed: %s", exc)
+        return False, f"Network error contacting Brevo: {exc}"
+    except Exception as exc:  # noqa: BLE001 — last-resort safety
+        logger.exception("Unexpected Brevo HTTP error: %s", exc)
+        return False, f"Unexpected error: {exc}"
+
+    if 200 <= resp.status_code < 300:
+        return True, f"Confirmation email sent to {to_email}"
+
+    # Brevo returns JSON error bodies — surface the underlying message
+    # so users (and we) can debug from the toast alone.
+    detail = ""
+    try:
+        body = resp.json()
+        msg = body.get("message") or body.get("code") or "unknown"
+        detail = f" — {msg}"
+    except Exception:  # noqa: BLE001
+        detail = (resp.text or "")[:200]
+        if detail:
+            detail = f" — {detail}"
+
+    if resp.status_code == 401:
+        return False, (
+            "Brevo rejected the API key. Generate a new one at "
+            "https://app.brevo.com/settings/keys/api and paste it as "
+            "`api_key` in your `[brevo_api]` secrets block."
+            + detail
+        )
+    if resp.status_code == 400 and "sender" in (detail or "").lower():
+        return False, (
+            "Brevo rejected the sender. The `from_email` in "
+            "`[brevo_api]` must be a verified sender at "
+            "https://app.brevo.com/senders — your signup email is "
+            "verified by default."
+            + detail
+        )
+    return False, f"Brevo HTTP {resp.status_code}{detail}"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# SMTP transport (legacy — kept for Gmail / Resend / Mailgun / etc.)
+# ──────────────────────────────────────────────────────────────────────────
+def _send_via_smtp(
+    *,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    plain_body: str,
+    timeout: float = 12.0,
+) -> tuple[bool, str]:
+    """Send an email via plain smtplib. Returns ``(ok, reason)``.
+
+    Mirrors the previous monolithic ``send_booking_email`` logic but
+    factored out so the dispatch layer can pick between transports
+    without duplicating the message builder.
+    """
+    s = _smtp_secrets()
+    host = (s["host"] or "").strip()
+    port = int(s.get("port") or 587)
+    username = (s["username"] or "").strip()
+    password = (s["password"] or "").strip()
+    use_tls = bool(s.get("use_tls", True))
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = _build_from_header()
+    msg["To"] = to_email
+    msg.set_content(plain_body)
+    msg.add_alternative(html_body, subtype="html")
 
     try:
         if port == 465:
-            # Implicit TLS (SMTPS).
             ctx = ssl.create_default_context()
             with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ctx) as smtp:
                 smtp.login(username, password)
@@ -249,61 +516,7 @@ def send_booking_email(
         logger.exception("Unexpected email error: %s", exc)
         return False, f"Unexpected error: {exc}"
 
-    return True, f"Confirmation email sent to {to_email.strip()}"
-
-
-def send_test_email(*, to_email: str) -> tuple[bool, str]:
-    """Send a single 'this is a test' email used by the Settings UI.
-
-    Bypasses no toggle — credentials alone are enough to test, so the
-    owner can verify SMTP is reachable before relying on it.
-    """
-    if not is_email_configured():
-        return False, (
-            "SMTP credentials are not configured. Add the [smtp] block "
-            "with host / port / username / password / from_email to "
-            "Streamlit secrets."
-        )
-    if not (to_email or "").strip():
-        return False, "Please enter an email address to test."
-
-    s = _smtp_secrets()
-    host = (s["host"] or "").strip()
-    port = int(s.get("port") or 587)
-    username = (s["username"] or "").strip()
-    password = (s["password"] or "").strip()
-    use_tls = bool(s.get("use_tls", True))
-
-    msg = EmailMessage()
-    msg["Subject"] = "Click2Serve — SMTP test message"
-    msg["From"] = _build_from_header()
-    msg["To"] = to_email.strip()
-    msg.set_content(
-        "If you got this email, your Click2Serve SMTP setup is working.\n"
-        "You can now turn on booking-confirmation emails for customers."
-    )
-
-    try:
-        if port == 465:
-            ctx = ssl.create_default_context()
-            with smtplib.SMTP_SSL(host, port, timeout=12, context=ctx) as smtp:
-                smtp.login(username, password)
-                smtp.send_message(msg)
-        else:
-            with smtplib.SMTP(host, port, timeout=12) as smtp:
-                smtp.ehlo()
-                if use_tls:
-                    ctx = ssl.create_default_context()
-                    smtp.starttls(context=ctx)
-                    smtp.ehlo()
-                smtp.login(username, password)
-                smtp.send_message(msg)
-    except smtplib.SMTPAuthenticationError as exc:
-        return False, _auth_failure_message(host, exc)
-    except Exception as exc:  # noqa: BLE001
-        return False, f"Could not send test email: {exc}"
-
-    return True, f"Test email sent to {to_email.strip()}"
+    return True, f"Confirmation email sent to {to_email}"
 
 
 # ──────────────────────────────────────────────────────────────────────────

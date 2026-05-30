@@ -7,7 +7,10 @@ from core.db import (
     count_bookings, delete_all_bookings, get_shop_config,
     update_shop_config,
 )
-from core.email_sender import is_email_configured, send_test_email
+from core.email_sender import (
+    email_transport_label, is_brevo_api_configured, is_email_configured,
+    is_smtp_configured, send_test_email,
+)
 from core.notifications import (
     is_api_key_configured, is_twilio_configured, is_twilio_sms_configured,
     send_sms_test, send_test_message, send_twilio_test,
@@ -608,14 +611,15 @@ st.markdown(
 email_ready = is_email_configured()
 if email_ready:
     st.success(
-        "SMTP credentials are **configured** in `secrets.toml`. Booking "
-        "confirmation emails are being sent automatically."
+        f"Email transport is **configured** ({email_transport_label()}). "
+        f"Booking confirmation emails are being sent automatically."
     )
 else:
     st.warning(
-        "SMTP credentials are **not configured**. Booking emails will be "
-        "skipped until you add the `[smtp]` block to your Streamlit "
-        "secrets. Setup walkthrough below."
+        "Email is **not configured**. Booking emails will be skipped "
+        "until you add either a `[brevo_api]` (HTTP, recommended for "
+        "Streamlit Cloud) or `[smtp]` block to your Streamlit secrets. "
+        "Setup walkthrough below."
     )
 
 with st.expander("Send a test email"):
@@ -642,6 +646,51 @@ with st.expander("Send a test email"):
             st.success(reason)
         else:
             st.error(reason)
+
+with st.expander("Recommended: Brevo HTTP API (no SMTP, no IP whitelist)"):
+    st.markdown(
+        """
+        **Best path for Streamlit Cloud users.** Streamlit Cloud sends
+        from rotating shared IPs, which Brevo's SMTP firewall blocks
+        with `525 Unauthorized IP` errors. The HTTP API has no such
+        restriction \u2014 same provider, same free 300/day quota, just
+        a cleaner transport.
+
+        **Step 1.** Go to https://app.brevo.com/settings/keys/api
+        (note: `/keys/api`, NOT `/keys/smtp`) \u2014 this is a
+        *different* tab from the SMTP credentials.
+
+        **Step 2.** Click **Generate a new API key** \u2014 name it
+        `Click2Serve-API`. The key starts with `xkeysib-...`.
+        Copy it immediately (Brevo shows it only once).
+
+        **Step 3.** In Streamlit Cloud secrets, paste this block.
+        Remove or comment out any existing `[smtp]` block \u2014 if both
+        are present, the HTTP API wins.
+
+        ```toml
+        [brevo_api]
+        api_key    = "xkeysib-..."           # from /settings/keys/api
+        from_email = "<your Brevo signup email>"
+        from_name  = "Click2Serve"
+        ```
+
+        **Step 4.** Save \u2192 wait ~30s for Streamlit to restart \u2192
+        the green status pill above changes to *Email transport is
+        configured (Brevo HTTP API)*.
+
+        **Step 5.** Click **Send a test email** above with your Brevo
+        signup email \u2014 you should get the test in 2\u201310s.
+
+        ---
+
+        **Why not just whitelist Streamlit Cloud's IPs on Brevo?**
+        Streamlit Cloud's outbound IP changes between deploys and
+        sometimes mid-session. You'd be in a permanent whack-a-mole
+        keeping the whitelist current. The HTTP API skips that
+        entirely.
+        """
+    )
 
 with st.expander("SMTP setup \u2014 step by step"):
     st.markdown(
