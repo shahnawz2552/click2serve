@@ -12,6 +12,7 @@ Sidebar starts collapsed so the home page lands cleanly on mobile.
 import streamlit as st
 
 from core.db import init_db
+from core.pwa import inject_pwa
 from core.seo import google_traffic_banner, inject_local_business_jsonld
 from core.styles import (
     BORDER, INK, MUTED, PRIMARY, PRIMARY_TINT, SURFACE,
@@ -36,6 +37,12 @@ st.set_page_config(
 
 # ── Apply the global stylesheet to every page ───────────────────────────────
 inject_global_css()
+
+# ── Make the site installable as a PWA ─────────────────────────────────────
+# Adds the manifest link, theme/icon metadata, registers a tiny shell-
+# caching service worker, and surfaces an "Install app" pill on Chrome /
+# Edge or a one-time iOS Safari hint. Idempotent across reruns.
+inject_pwa()
 
 # ── Scroll-reveal observer (fades up H2s and .c2s-reveal blocks on entry) ──
 inject_scroll_reveal()
