@@ -1,29 +1,34 @@
 """Progressive Web App (PWA) integration for Click2Serve.
 
-Streamlit doesn't serve static files, so we ship the entire PWA
-contract inline:
+Streamlit doesn't serve static files AND it renders all
+``st.markdown(unsafe_allow_html=True)`` content inside a body iframe.
+Both of those things break the standard PWA install path:
 
-  - The Web App Manifest is embedded as a ``data:application/json``
-    URI on the ``<link rel="manifest">``.
-  - The service worker is embedded as a Blob URL created at runtime
-    (``URL.createObjectURL`` over a Blob holding the SW source).
-  - App icons are SVG, embedded as ``data:image/svg+xml`` URIs in
-    the manifest.
+  - There's no real ``/manifest.json`` URL we can point to.
+  - A ``<link rel="manifest">`` placed inside the body iframe is
+    ignored by Chrome's PWA-installable heuristics, which require
+    the manifest to be reachable from the top-level document.
 
-What this gives the customer:
+So we use ``streamlit.components.v1.html`` (which DOES give us a
+real iframe with a controllable script context) and have the
+script INSIDE that iframe escape via ``window.parent.document`` to
+write the manifest link, theme-color meta, apple-touch-icon, etc.
+into the top-level document head where Chrome will see them.
 
-  - Chrome / Edge on Android show an "Install Click2Serve" banner
-    under the URL bar after they've interacted with the page once.
-  - iOS Safari: tap Share -> "Add to Home Screen" gives a native
-    icon + standalone display mode (no browser chrome).
-  - Once installed, tapping the icon opens Click2Serve fullscreen
-    with our brand colour as the status-bar tint.
-  - The service worker caches the shell so a second visit loads
-    instantly from cache before the network responds.
+Same trick for the service worker: ``window.parent.navigator``
+exposes the parent's serviceWorker registration API, which is what
+the parent's PWA criteria actually check.
+
+  - Web App Manifest is base64 in a ``data:application/json`` URI.
+  - App icon is SVG in a ``data:image/svg+xml`` URI.
+  - Service worker is registered via Blob URL created in the
+    parent document (so its scope is ``/``, not ``/static/...``).
 
 Public surface:
-  - ``inject_pwa()``  drop ALL the head tags + register the SW.
-                      Idempotent across page reruns.
+  - ``inject_pwa()``  drop the components.html block that injects
+                      the manifest + SW into the parent document,
+                      and render the customer-facing install pill /
+                      iOS hint. Idempotent across reruns.
 """
 from __future__ import annotations
 
@@ -32,6 +37,7 @@ import json
 import logging
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 logger = logging.getLogger(__name__)
 
@@ -211,64 +217,116 @@ self.addEventListener('fetch', (e) => {
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# HEAD payload — manifest link, theme colors, Apple-specific tags, and
-# the service-worker registration script.
+# HEAD payload — runs INSIDE a components.html iframe, then escapes via
+# ``window.parent.document`` to write tags into the top-level document.
 # ──────────────────────────────────────────────────────────────────────────
-def _build_head_html() -> str:
-    """Return the complete HTML blob to be injected into the page <head>.
+def _build_head_injector_html(*, sw_source: str) -> str:
+    """Return a small HTML document that injects the PWA tags upward.
 
-    Streamlit puts ``st.markdown(unsafe_allow_html=True)`` content into
-    the body, but a pleasant side-effect is that browsers happily honour
-    ``<link rel=manifest>`` and ``<meta>`` tags wherever they appear in
-    the document. Modern Chrome and Safari both pick them up from the
-    body and behave as if they were in the head.
+    Streamlit's ``components.html`` renders this string as a real
+    sandboxed iframe whose script can reach its parent. We use that
+    privilege to write the manifest link, theme-color meta, Apple-
+    specific tags, and apple-touch-icon into the parent document's
+    HEAD — where the browser's PWA-installable heuristics actually
+    look for them. The legacy ``st.markdown(unsafe_allow_html=True)``
+    approach put these tags inside the BODY iframe, where Chrome
+    silently ignored them.
+
+    The same script also registers the service worker on
+    ``window.parent.navigator`` so the SW's scope is ``/`` (the real
+    app), not the inner iframe URL.
     """
     manifest_uri = _manifest_data_uri()
     icon_uri = _icon_data_uri()
-    sw_source = _SW_JS
 
-    # Escape backticks since we wrap the SW source in a JS template
-    # literal below.
-    sw_source_escaped = (
-        sw_source.replace("\\", "\\\\").replace("`", "\\`")
-    )
+    # JSON-encode strings so they're safe to embed inside the JS literal
+    # inside this f-string — handles quotes / backslashes / unicode.
+    manifest_uri_js = json.dumps(manifest_uri)
+    icon_uri_js = json.dumps(icon_uri)
+    theme_js = json.dumps(_THEME_COLOR)
+    sw_source_js = json.dumps(sw_source)
 
+    # Note: this is a complete HTML document (not just a fragment) so
+    # Streamlit's components.html harness wraps it correctly.
     return f"""
-<!-- ── Click2Serve PWA HEAD payload (injected by core.pwa) ──────────── -->
-<link rel="manifest" href="{manifest_uri}">
-
-<!-- Theme colour for the address bar / status bar tint -->
-<meta name="theme-color" content="{_THEME_COLOR}">
-<meta name="msapplication-TileColor" content="{_THEME_COLOR}">
-
-<!-- Apple-specific (iOS Safari) standalone-mode tags -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Click2Serve">
-<link rel="apple-touch-icon" href="{icon_uri}">
-<link rel="apple-touch-icon" sizes="180x180" href="{icon_uri}">
-<link rel="icon" type="image/svg+xml" href="{icon_uri}">
-
-<!-- Service worker registration (uses a Blob URL because Streamlit
-     does not serve a real /service-worker.js path). -->
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
 <script>
 (function () {{
-  if (window.__c2sPwaReady) return;
-  window.__c2sPwaReady = true;
-  if (!('serviceWorker' in navigator)) return;
+  // Streamlit re-mounts iframes on every rerun. Use a flag on the
+  // PARENT window so we don't keep adding duplicate <link> tags every
+  // time the user navigates between pages.
   try {{
-    const swSrc = `{sw_source_escaped}`;
-    const blob = new Blob([swSrc], {{type: 'application/javascript'}});
-    const swUrl = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(swUrl, {{scope: '/'}})
-      .catch(function (err) {{
-        console.warn('Click2Serve SW registration failed:', err);
-      }});
+    if (window.parent.__c2sPwaInjected) {{
+      return;
+    }}
+    window.parent.__c2sPwaInjected = true;
+  }} catch (e) {{
+    // Cross-origin? Streamlit Cloud is same-origin so this should
+    // not happen, but bail gracefully if it ever does.
+    console.warn('Click2Serve PWA: cannot reach parent window:', e);
+    return;
+  }}
+
+  var pdoc = window.parent.document;
+  var phead = pdoc.head || pdoc.getElementsByTagName('head')[0];
+  if (!phead) return;
+
+  function add(tag, attrs) {{
+    var el = pdoc.createElement(tag);
+    for (var k in attrs) {{
+      if (Object.prototype.hasOwnProperty.call(attrs, k)) {{
+        el.setAttribute(k, attrs[k]);
+      }}
+    }}
+    el.setAttribute('data-c2s-pwa', '1');
+    phead.appendChild(el);
+    return el;
+  }}
+
+  // --- Manifest link (top-level, not body iframe) -----------------
+  add('link', {{ rel: 'manifest', href: {manifest_uri_js} }});
+
+  // --- Theme + browser-chrome colours ----------------------------
+  add('meta', {{ name: 'theme-color', content: {theme_js} }});
+  add('meta', {{ name: 'msapplication-TileColor', content: {theme_js} }});
+
+  // --- Apple-specific (iOS Safari standalone mode) ---------------
+  add('meta', {{ name: 'apple-mobile-web-app-capable', content: 'yes' }});
+  add('meta', {{
+    name: 'apple-mobile-web-app-status-bar-style',
+    content: 'default'
+  }});
+  add('meta', {{
+    name: 'apple-mobile-web-app-title', content: 'Click2Serve'
+  }});
+
+  // --- Icons (manifest references the same SVG already) ----------
+  add('link', {{ rel: 'apple-touch-icon', href: {icon_uri_js} }});
+  add('link', {{
+    rel: 'apple-touch-icon', sizes: '180x180', href: {icon_uri_js}
+  }});
+  add('link', {{
+    rel: 'icon', type: 'image/svg+xml', href: {icon_uri_js}
+  }});
+
+  // --- Service worker registered on the PARENT navigator so its
+  // scope matches the real app URL, not the inner iframe.
+  try {{
+    if ('serviceWorker' in window.parent.navigator) {{
+      var swSource = {sw_source_js};
+      var blob = new Blob([swSource], {{type: 'application/javascript'}});
+      var swUrl = URL.createObjectURL(blob);
+      window.parent.navigator.serviceWorker.register(swUrl, {{scope: '/'}})
+        .catch(function (err) {{
+          console.warn('Click2Serve SW registration failed:', err);
+        }});
+    }}
   }} catch (err) {{
     console.warn('Click2Serve SW setup error:', err);
   }}
 }})();
 </script>
+</body></html>
 """
 
 
@@ -440,27 +498,43 @@ _INSTALL_HINT_BODY = """
 def inject_pwa() -> None:
     """Inject the PWA head + install-hint UI into the current page.
 
-    Idempotent within a Streamlit run via ``st.session_state`` — calling
-    it from every page (which app.py does, since app.py runs on every
-    page transition) won't double-inject the manifest link or register
-    the service worker twice.
+    Two-step injection:
 
-    Owner pages (anyone signed in) skip the customer-facing "Install
-    app" pill so it doesn't clutter the bookings / settings UIs. The
-    head tags + service worker still register so the owner's own
-    browser can install if they want.
+      1. ``components.html(...)`` renders a real iframe whose script
+         escapes via ``window.parent.document`` to write the manifest
+         link, theme-color meta, Apple tags, and apple-touch-icon
+         into the TOP-LEVEL document head — where Chrome's PWA
+         install heuristics actually look. (st.markdown alone puts
+         tags inside the body iframe where Chrome ignores them.)
+
+      2. ``st.markdown`` renders the customer-facing install pill /
+         iOS hint inside the page body. These don't need to escape
+         the iframe — they're just visible UI, not document
+         metadata.
+
+    Both halves are guarded against duplicate injection: the head
+    half via ``window.parent.__c2sPwaInjected``; the body half via
+    ``st.session_state["_c2s_pwa_body_injected"]``.
+
+    Owner pages (anyone signed in) skip the customer-facing install
+    pill so it doesn't clutter the bookings / settings UIs. The
+    head + service worker still register so the owner's browser can
+    install if they want.
     """
-    if st.session_state.get("_c2s_pwa_injected"):
+    # Head half — runs every Streamlit rerun, but the parent-window
+    # flag inside the iframe script makes it a no-op after the first
+    # successful injection. Cheap to call repeatedly.
+    components.html(
+        _build_head_injector_html(sw_source=_SW_JS),
+        height=0,
+    )
+
+    # Body half — install pill / iOS hint. Idempotent via session_state.
+    if st.session_state.get("_c2s_pwa_body_injected"):
         return
 
-    st.markdown(_build_head_html(), unsafe_allow_html=True)
     st.markdown(_INSTALL_HINT_HTML, unsafe_allow_html=True)
-
-    # Customer-facing install pill / iOS hint — hidden when the owner
-    # is signed in. The owner can still trigger install via Chrome's
-    # built-in "Install app" menu item; the pill is just the fallback
-    # nudge for first-time customers.
     if not st.session_state.get("logged_in"):
         st.markdown(_INSTALL_HINT_BODY, unsafe_allow_html=True)
 
-    st.session_state["_c2s_pwa_injected"] = True
+    st.session_state["_c2s_pwa_body_injected"] = True
