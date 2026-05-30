@@ -8,6 +8,12 @@ from core.styles import (
     BORDER, INK, MUTED, PRIMARY, SURFACE, category_accent, category_badge,
     floating_book_button, hero_block, inject_global_css, trust_badge,
 )
+from core.visitor import track_session_visit, visitor_badge_html
+
+# Track this session as a visit (idempotent within the session). Runs
+# before any rendering so the counter reflects every fresh customer
+# landing — not deduped by browser, page navigation, or refresh.
+track_session_visit()
 
 inject_global_css()
 
@@ -206,3 +212,10 @@ if not st.session_state.get("logged_in"):
 # Renders fixed bottom-right; gracefully styled via .c2s-fab in styles.py.
 if not st.session_state.get("logged_in"):
     floating_book_button()
+
+
+
+# Visitor counter — small social-proof line at the very bottom. Visible
+# to everyone (including the owner) so it doubles as a quick pulse
+# check during the day.
+st.markdown(visitor_badge_html(), unsafe_allow_html=True)

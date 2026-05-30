@@ -18,6 +18,9 @@ from core.styles import floating_book_button, inject_global_css, section_header
 
 inject_global_css()
 
+from core.visitor import track_session_visit
+track_session_visit()
+
 section_header(
     eyebrow="Pay online",
     title="Fast, secure UPI payment.",

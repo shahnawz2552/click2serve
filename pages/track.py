@@ -20,6 +20,9 @@ from core.styles import (
 
 inject_global_css()
 
+from core.visitor import track_session_visit
+track_session_visit()
+
 STATUS_MESSAGE = {
     "Pending":     "We have received your request and will start shortly.",
     "In Progress": "Your work is being processed by the shop owner.",

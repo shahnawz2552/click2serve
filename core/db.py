@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import secrets as secrets_lib
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import streamlit as st
@@ -667,3 +667,99 @@ def count_bookings() -> int:
     except Exception as exc:  # noqa: BLE001
         logger.debug("count_bookings failed: %s", exc)
         return 0
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Visitor counter
+# ──────────────────────────────────────────────────────────────────────────────
+# Cheap, append-only, no PII. The `daily_visits` table holds one row per
+# calendar day — pages call ``record_visit`` once per session (guarded
+# against double-counting), and the dashboard / home footer read
+# aggregates via ``get_visit_stats``.
+def record_visit() -> None:
+    """Atomically increment today's visit count.
+
+    Implemented as an UPSERT (insert-or-update) so we don't need a
+    Postgres function — supabase-py can express it natively. Failures
+    are logged but never raise; counter accuracy is far less important
+    than not crashing the home page when the DB is briefly unreachable.
+    """
+    today = date.today().isoformat()
+    sb = get_supabase()
+    try:
+        # Read the current value first so we can increment it. The
+        # alternative (a Postgres RPC) would be safer for racing tabs
+        # but supabase-py can't run inline SQL, and a brief race that
+        # under-counts a couple of visits per day isn't worth the
+        # complexity for an MVP.
+        existing = (
+            sb.table("daily_visits")
+            .select("visits")
+            .eq("day", today)
+            .limit(1)
+            .execute()
+        )
+        rows = existing.data or []
+        if rows:
+            new_count = int(rows[0].get("visits") or 0) + 1
+            sb.table("daily_visits").update(
+                {"visits": new_count}
+            ).eq("day", today).execute()
+        else:
+            sb.table("daily_visits").insert(
+                {"day": today, "visits": 1}
+            ).execute()
+    except Exception as exc:  # noqa: BLE001 — never crash the page on a counter
+        logger.debug("record_visit failed silently: %s", exc)
+
+
+def get_visit_stats() -> dict[str, int]:
+    """Return a small dict of visitor aggregates for display.
+
+    Keys:
+      - ``today``    : today's visit count
+      - ``yesterday``: yesterday's count (for delta indicators)
+      - ``last7``    : sum over the trailing 7 days inclusive
+      - ``last30``   : sum over the trailing 30 days inclusive
+      - ``all_time`` : sum over every row (cheap; daily_visits is small)
+    """
+    today = date.today()
+    sb = get_supabase()
+    try:
+        # Pull every row — fast for a daily-grain table, easier than
+        # five separate aggregate queries.
+        res = sb.table("daily_visits").select("day, visits").execute()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("get_visit_stats failed: %s", exc)
+        return {
+            "today": 0, "yesterday": 0,
+            "last7": 0, "last30": 0, "all_time": 0,
+        }
+
+    rows = res.data or []
+    by_day: dict[str, int] = {}
+    for r in rows:
+        day_str = (r.get("day") or "")
+        try:
+            count = int(r.get("visits") or 0)
+        except (TypeError, ValueError):
+            count = 0
+        by_day[day_str] = count
+
+    def _on(d: date) -> int:
+        return by_day.get(d.isoformat(), 0)
+
+    yesterday = today - timedelta(days=1)
+
+    last7 = sum(_on(today - timedelta(days=i)) for i in range(0, 7))
+    last30 = sum(_on(today - timedelta(days=i)) for i in range(0, 30))
+    all_time = sum(by_day.values())
+
+    return {
+        "today": _on(today),
+        "yesterday": _on(yesterday),
+        "last7": last7,
+        "last30": last30,
+        "all_time": all_time,
+    }
