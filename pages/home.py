@@ -219,3 +219,18 @@ if not st.session_state.get("logged_in"):
 # to everyone (including the owner) so it doubles as a quick pulse
 # check during the day.
 st.markdown(visitor_badge_html(), unsafe_allow_html=True)
+
+# Owner-only debug strip — only renders when the signed-in owner is
+# viewing the home page AND the visitor counter has hit a recent
+# error. Helps the shop owner self-diagnose RLS / missing-table /
+# stale-cache issues without digging through Streamlit Cloud logs.
+if st.session_state.get("logged_in"):
+    _vis_err = st.session_state.get("_c2s_visit_error")
+    if _vis_err:
+        st.caption(
+            f":warning: Visitor counter error (only you can see this): "
+            f"`{_vis_err}`. Most common cause is missing RLS policies on "
+            f"`daily_visits`. Re-run the latest `supabase/schema.sql` to "
+            f"add them, or paste the `daily_visits` block from there into "
+            f"Supabase SQL Editor."
+        )
