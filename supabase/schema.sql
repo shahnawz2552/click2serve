@@ -141,6 +141,41 @@ create table if not exists daily_visits (
 );
 create index if not exists ix_daily_visits_day on daily_visits(day desc);
 
+-- Row-level security on daily_visits
+-- ----------------------------------
+-- Supabase enables RLS by default on all new public-schema tables, and
+-- denies every operation to the anon role unless an explicit policy
+-- allows it. Without these policies the visitor counter writes silently
+-- fail (record_visit() swallows the PostgREST error), which manifests
+-- on the home page as "you are one of our first visitors" forever even
+-- after dozens of real visits.
+--
+-- We expose three permissive policies so the anon key can: insert a
+-- new daily row, increment today's existing row, and read the totals
+-- for the footer / dashboard. No PII is stored in this table so the
+-- exposure is intentional.
+alter table daily_visits enable row level security;
+
+drop policy if exists "daily_visits_select"  on daily_visits;
+drop policy if exists "daily_visits_insert"  on daily_visits;
+drop policy if exists "daily_visits_update"  on daily_visits;
+
+create policy "daily_visits_select"
+on daily_visits for select
+to public
+using (true);
+
+create policy "daily_visits_insert"
+on daily_visits for insert
+to public
+with check (true);
+
+create policy "daily_visits_update"
+on daily_visits for update
+to public
+using (true)
+with check (true);
+
 -- ─────────────────────────────────────────────────────────────────────────
 -- Singleton config row
 -- ─────────────────────────────────────────────────────────────────────────

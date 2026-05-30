@@ -682,8 +682,21 @@ def record_visit() -> None:
 
     Implemented as an UPSERT (insert-or-update) so we don't need a
     Postgres function — supabase-py can express it natively. Failures
-    are logged but never raise; counter accuracy is far less important
-    than not crashing the home page when the DB is briefly unreachable.
+    are logged AND stashed in ``st.session_state["_c2s_visit_error"]``
+    so the owner debug footer (visible only to signed-in owners) can
+    surface what actually went wrong; counter accuracy itself is far
+    less important than not crashing the home page when the DB is
+    briefly unreachable.
+
+    Common failure modes you might see in the debug footer:
+      - ``permission denied for table daily_visits`` -> the table has
+        RLS on but no insert/update policies for the anon role; run
+        the latest schema.sql which now creates them.
+      - ``relation \"daily_visits\" does not exist`` -> migration
+        wasn't run yet; paste the daily_visits CREATE TABLE block
+        from supabase/schema.sql into the Supabase SQL editor.
+      - ``Could not find the 'day' column`` -> stale PostgREST schema
+        cache; run ``notify pgrst, 'reload schema';`` once.
     """
     today = date.today().isoformat()
     sb = get_supabase()
@@ -710,8 +723,17 @@ def record_visit() -> None:
             sb.table("daily_visits").insert(
                 {"day": today, "visits": 1}
             ).execute()
+        # Clear any stale error from a previous run.
+        try:
+            st.session_state.pop("_c2s_visit_error", None)
+        except Exception:  # noqa: BLE001
+            pass
     except Exception as exc:  # noqa: BLE001 — never crash the page on a counter
-        logger.debug("record_visit failed silently: %s", exc)
+        logger.warning("record_visit failed: %s", exc)
+        try:
+            st.session_state["_c2s_visit_error"] = str(exc)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def get_visit_stats() -> dict[str, int]:
