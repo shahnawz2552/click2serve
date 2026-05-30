@@ -1,9 +1,11 @@
 """Customer landing page — gradient hero, animated stats, vibrant grid."""
 from __future__ import annotations
 
+import re
+
 import streamlit as st
 
-from core.db import list_categories, list_services
+from core.db import get_shop_config, list_categories, list_services
 from core.styles import (
     BORDER, INK, MUTED, PRIMARY, SURFACE, category_accent, category_badge,
     floating_book_button, hero_block, inject_global_css, trust_badge,
@@ -28,9 +30,64 @@ etas = [int(s.get("eta_hours") or 24) for s in all_services]
 avg_eta = int(round(sum(etas) / len(etas))) if etas else 24
 
 
+# ── Hero eyebrow text — derived from shop_config so it stays accurate ──────
+# The hero badge used to read a hardcoded "Live now · Bharatpur". Now we
+# pull the location from ``shop_config.address`` so updating Settings →
+# Section 01 propagates everywhere automatically. Multi-line addresses
+# get parsed; we pick the most recognisable town/district segment.
+def _derive_hero_location() -> str:
+    """Return the location string that appears in the hero eyebrow.
+
+    Falls back to a generic 'Live now' when no address is configured
+    yet, so the badge still looks polished on a fresh deployment.
+    """
+    cfg = get_shop_config() or {}
+    raw = (cfg.get("address") or "").strip()
+    if not raw:
+        return "Live now"
+
+    parts = [p.strip() for p in re.split(r"[,\n]+", raw) if p.strip()]
+    # Drop / clean segments that are obviously not city names.
+    cleaned: list[str] = []
+    for p in parts:
+        # Pin codes (6 digits, optionally with hyphen prefix).
+        if re.fullmatch(r"-?\s*\d{6}", p):
+            continue
+        # Mixed segments like 'Pulwama 192301' or 'PIN - 192301'.
+        if re.search(r"\b\d{6}\b", p):
+            stripped = re.sub(r"\s*-?\s*\d{6}.*$", "", p).strip(" -,")
+            if stripped:
+                cleaned.append(stripped)
+            continue
+        cleaned.append(p)
+    if not cleaned:
+        return "Live now"
+
+    # Prefer the second-to-last segment (district / town) when available,
+    # else the last one. For "Larve, Kakapora, Pulwama" this picks
+    # "Kakapora" — the recognisable town a customer would search.
+    candidate = cleaned[-2] if len(cleaned) >= 2 else cleaned[-1]
+
+    # Strip leading "Shop No." / "Plot" / "House" prefixes that aren't
+    # locations.
+    candidate = re.sub(
+        r"^(shop\s*(no\.?)?|house\s*(no\.?)?|plot\s*(no\.?)?|near)\s*"
+        r"[\.\-:#]?\s*",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    ).strip()
+    if not candidate:
+        candidate = cleaned[-1]
+    return f"Live now · {candidate}"
+
+
+hero_eyebrow = _derive_hero_location()
+
+
 # ── Hero ────────────────────────────────────────────────────────────────────
 hero_block(
-    eyebrow="Live now · Bharatpur",
+    eyebrow=hero_eyebrow,
     plain_lead="Govt paperwork,",
     accent_word="done in hours.",
     plain_tail="",
